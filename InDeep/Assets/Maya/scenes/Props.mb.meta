@@ -1,0 +1,341 @@
+fileFormatVersion: 2
+guid: 9e86262d403aa41f99b98c62684a664d
+timeCreated: 1450977661
+licenseType: Pro
+ModelImporter:
+  serializedVersion: 19
+  fileIDToRecycleName:
+    100000: polySurface1
+    100002: //RootNode
+    100004: TheBoat
+    100006: TheCage
+    100008: curve2
+    100010: curve3
+    100012: curve4
+    100014: loftedSurface1
+    100016: loftedSurface2
+    100018: nurbsCircle1
+    100020: nurbsCircle2
+    100022: nurbsCircle3
+    100024: nurbsCircle4
+    100026: nurbsCircle5
+    100028: nurbsCircle6
+    100030: pCube1
+    100032: polySurface2
+    100034: polySurface3
+    100036: polySurface4
+    100038: polySurface5
+    100040: polySurface6
+    100042: transform1
+    100044: Shark1
+    100046: polySurface3 1
+    100048: polySurface7
+    100050: polySurface8
+    100052: polySurface9
+    100054: transform2
+    100056: transform3
+    100058: transform4
+    100060: transform5
+    100062: transform6
+    100064: Head
+    100066: Jaw
+    100068: LFin
+    100070: Neck
+    100072: Neck 1
+    100074: RFin
+    100076: Root
+    100078: Tail
+    100080: Tail 1
+    100082: Tail 2
+    100084: Tail 3
+    100086: Tail 4
+    100088: Tail 5
+    100090: TailFin
+    100092: TopJaw
+    100094: polySurface12
+    100096: SharkMesh
+    100098: Dorsal0
+    100100: Dorsal0_CTRL
+    100102: Dorsal0_GRP
+    100104: Dorsal1
+    100106: Dorsal1_CTRL
+    100108: Dorsal1_GRP
+    100110: Dorsal2
+    100112: Dorsal2_CTRL
+    100114: Dorsal2_GRP
+    100116: Head_CTRL
+    100118: Head_GRP
+    100120: Jaw_CTRL
+    100122: Jaw_GRP
+    100124: Neck0
+    100126: Neck0_CTRL
+    100128: Neck0_GRP
+    100130: Neck1
+    100132: Neck1_CTRL
+    100134: Neck1_GRP
+    100136: Pectoral0_Left
+    100138: Pectoral0_Left_CTRL
+    100140: Pectoral0_Left_GRP
+    100142: Pectoral0_Right
+    100144: Pectoral0_Right_CTRL
+    100146: Pectoral0_Right_GRP
+    100148: Pectoral1_Left
+    100150: Pectoral1_Left_CTRL
+    100152: Pectoral1_Left_GRP
+    100154: Pectoral1_Right
+    100156: Pectoral1_Right_CTRL
+    100158: Pectoral1_Right_GRP
+    100160: Pectoral2_Left
+    100162: Pectoral2_Left_CTRL
+    100164: Pectoral2_Left_GRP
+    100166: Pectoral2_Right
+    100168: Pectoral2_Right_CTRL
+    100170: Pectoral2_Right_GRP
+    100172: Root_CTRL
+    100174: Root_GRP
+    100176: Tail0
+    100178: Tail0_CTRL
+    100180: Tail0_GRP
+    100182: Tail1
+    100184: Tail1_CTRL
+    100186: Tail1_GRP
+    100188: Tail2
+    100190: Tail2_CTRL
+    100192: Tail2_GRP
+    100194: Tail3
+    100196: Tail3_CTRL
+    100198: Tail3_GRP
+    100200: Tail4
+    100202: Tail4_CTRL
+    100204: Tail4_GRP
+    100206: TailEnd
+    100208: TailEnd_CTRL
+    100210: TailEnd_GRP
+    100212: Dorsal2_GRP_GRP
+    100214: TopJaw_CTRL
+    100216: TopJaw_GRP
+    400000: polySurface1
+    400002: //RootNode
+    400004: TheBoat
+    400006: TheCage
+    400008: curve2
+    400010: curve3
+    400012: curve4
+    400014: loftedSurface1
+    400016: loftedSurface2
+    400018: nurbsCircle1
+    400020: nurbsCircle2
+    400022: nurbsCircle3
+    400024: nurbsCircle4
+    400026: nurbsCircle5
+    400028: nurbsCircle6
+    400030: pCube1
+    400032: polySurface2
+    400034: polySurface3
+    400036: polySurface4
+    400038: polySurface5
+    400040: polySurface6
+    400042: transform1
+    400044: Shark1
+    400046: polySurface3 1
+    400048: polySurface7
+    400050: polySurface8
+    400052: polySurface9
+    400054: transform2
+    400056: transform3
+    400058: transform4
+    400060: transform5
+    400062: transform6
+    400064: Head
+    400066: Jaw
+    400068: LFin
+    400070: Neck
+    400072: Neck 1
+    400074: RFin
+    400076: Root
+    400078: Tail
+    400080: Tail 1
+    400082: Tail 2
+    400084: Tail 3
+    400086: Tail 4
+    400088: Tail 5
+    400090: TailFin
+    400092: TopJaw
+    400094: polySurface12
+    400096: SharkMesh
+    400098: Dorsal0
+    400100: Dorsal0_CTRL
+    400102: Dorsal0_GRP
+    400104: Dorsal1
+    400106: Dorsal1_CTRL
+    400108: Dorsal1_GRP
+    400110: Dorsal2
+    400112: Dorsal2_CTRL
+    400114: Dorsal2_GRP
+    400116: Head_CTRL
+    400118: Head_GRP
+    400120: Jaw_CTRL
+    400122: Jaw_GRP
+    400124: Neck0
+    400126: Neck0_CTRL
+    400128: Neck0_GRP
+    400130: Neck1
+    400132: Neck1_CTRL
+    400134: Neck1_GRP
+    400136: Pectoral0_Left
+    400138: Pectoral0_Left_CTRL
+    400140: Pectoral0_Left_GRP
+    400142: Pectoral0_Right
+    400144: Pectoral0_Right_CTRL
+    400146: Pectoral0_Right_GRP
+    400148: Pectoral1_Left
+    400150: Pectoral1_Left_CTRL
+    400152: Pectoral1_Left_GRP
+    400154: Pectoral1_Right
+    400156: Pectoral1_Right_CTRL
+    400158: Pectoral1_Right_GRP
+    400160: Pectoral2_Left
+    400162: Pectoral2_Left_CTRL
+    400164: Pectoral2_Left_GRP
+    400166: Pectoral2_Right
+    400168: Pectoral2_Right_CTRL
+    400170: Pectoral2_Right_GRP
+    400172: Root_CTRL
+    400174: Root_GRP
+    400176: Tail0
+    400178: Tail0_CTRL
+    400180: Tail0_GRP
+    400182: Tail1
+    400184: Tail1_CTRL
+    400186: Tail1_GRP
+    400188: Tail2
+    400190: Tail2_CTRL
+    400192: Tail2_GRP
+    400194: Tail3
+    400196: Tail3_CTRL
+    400198: Tail3_GRP
+    400200: Tail4
+    400202: Tail4_CTRL
+    400204: Tail4_GRP
+    400206: TailEnd
+    400208: TailEnd_CTRL
+    400210: TailEnd_GRP
+    400212: Dorsal2_GRP_GRP
+    400214: TopJaw_CTRL
+    400216: TopJaw_GRP
+    2300000: polySurface1
+    2300002: TheBoat
+    2300004: TheCage
+    2300006: loftedSurface1
+    2300008: loftedSurface2
+    2300010: pCube1
+    2300012: polySurface2
+    2300014: polySurface3
+    2300016: polySurface4
+    2300018: polySurface5
+    2300020: polySurface6
+    2300022: Shark1
+    2300024: polySurface7
+    2300026: polySurface8
+    2300028: polySurface9
+    2300030: SharkMesh
+    3300000: polySurface1
+    3300002: TheBoat
+    3300004: TheCage
+    3300006: loftedSurface1
+    3300008: loftedSurface2
+    3300010: pCube1
+    3300012: polySurface2
+    3300014: polySurface3
+    3300016: polySurface4
+    3300018: polySurface5
+    3300020: polySurface6
+    3300022: Shark1
+    3300024: polySurface7
+    3300026: polySurface8
+    3300028: polySurface9
+    3300030: SharkMesh
+    4300000: TheBoat
+    4300002: TheCage
+    4300004: polySurface1
+    4300006: polySurface2
+    4300008: polySurface3
+    4300010: polySurface4
+    4300012: polySurface5
+    4300014: polySurface6
+    4300016: loftedSurface1
+    4300018: loftedSurface2
+    4300020: pCube1
+    4300022: Shark1
+    4300024: polySurface7
+    4300026: polySurface8
+    4300028: polySurface9
+    4300030: SharkMesh
+    7400000: Take 001
+    9500000: //RootNode
+    13700000: polySurface8
+    13700002: SharkMesh
+  materials:
+    importMaterials: 1
+    materialName: 0
+    materialSearch: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleRotations: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    clipAnimations: []
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    importBlendShapes: 1
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 1
+    keepQuads: 0
+    weldVertices: 1
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+  importAnimation: 1
+  copyAvatar: 0
+  humanDescription:
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    hasTranslationDoF: 0
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 2
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

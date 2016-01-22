@@ -1,0 +1,140 @@
+fileFormatVersion: 2
+guid: ece84c0c009d14fa496d21c231b8dfdc
+timeCreated: 1450907517
+licenseType: Pro
+ModelImporter:
+  serializedVersion: 19
+  fileIDToRecycleName:
+    100000: CompoundCurve1
+    100002: CompoundCurve2
+    100004: CompoundCurve3
+    100006: CompoundCurve4
+    100008: curve1
+    100010: curve2
+    100012: curve2detachedCurve2
+    100014: curve3
+    100016: curve3detachedCurve2
+    100018: curve4
+    100020: curve4detachedCurve2
+    100022: IllustratorCurves1
+    100024: //RootNode
+    100026: loftedSurface1
+    100028: loftedSurface2
+    100030: loftedSurface3
+    100032: loftedSurface4
+    100034: loftedSurface5
+    100036: loftedSurface6
+    100038: offsetNurbsCurve1
+    100040: offsetNurbsCurve2
+    100042: offsetNurbsCurve3
+    100044: offsetNurbsCurve4
+    100046: offsetNurbsCurve5
+    100048: offsetNurbsCurve6
+    400000: CompoundCurve1
+    400002: CompoundCurve2
+    400004: CompoundCurve3
+    400006: CompoundCurve4
+    400008: curve1
+    400010: curve2
+    400012: curve2detachedCurve2
+    400014: curve3
+    400016: curve3detachedCurve2
+    400018: curve4
+    400020: curve4detachedCurve2
+    400022: IllustratorCurves1
+    400024: //RootNode
+    400026: loftedSurface1
+    400028: loftedSurface2
+    400030: loftedSurface3
+    400032: loftedSurface4
+    400034: loftedSurface5
+    400036: loftedSurface6
+    400038: offsetNurbsCurve1
+    400040: offsetNurbsCurve2
+    400042: offsetNurbsCurve3
+    400044: offsetNurbsCurve4
+    400046: offsetNurbsCurve5
+    400048: offsetNurbsCurve6
+    2300000: loftedSurface1
+    2300002: loftedSurface2
+    2300004: loftedSurface3
+    2300006: loftedSurface4
+    2300008: loftedSurface5
+    2300010: loftedSurface6
+    3300000: loftedSurface1
+    3300002: loftedSurface2
+    3300004: loftedSurface3
+    3300006: loftedSurface4
+    3300008: loftedSurface5
+    3300010: loftedSurface6
+    4300000: loftedSurface1
+    4300002: loftedSurface2
+    4300004: loftedSurface3
+    4300006: loftedSurface4
+    4300008: loftedSurface5
+    4300010: loftedSurface6
+    9500000: //RootNode
+  materials:
+    importMaterials: 1
+    materialName: 0
+    materialSearch: 1
+  animations:
+    legacyGenerateAnimations: 4
+    bakeSimulation: 0
+    resampleRotations: 1
+    optimizeGameObjects: 0
+    motionNodeName: 
+    animationImportErrors: 
+    animationImportWarnings: 
+    animationRetargetingWarnings: 
+    animationDoRetargetingWarnings: 0
+    animationCompression: 1
+    animationRotationError: 0.5
+    animationPositionError: 0.5
+    animationScaleError: 0.5
+    animationWrapMode: 0
+    extraExposedTransformPaths: []
+    clipAnimations: []
+    isReadable: 1
+  meshes:
+    lODScreenPercentages: []
+    globalScale: 1
+    meshCompression: 0
+    addColliders: 0
+    importBlendShapes: 1
+    swapUVChannels: 0
+    generateSecondaryUV: 0
+    useFileUnits: 1
+    optimizeMeshForGPU: 1
+    keepQuads: 0
+    weldVertices: 1
+    secondaryUVAngleDistortion: 8
+    secondaryUVAreaDistortion: 15.000001
+    secondaryUVHardAngle: 88
+    secondaryUVPackMargin: 4
+    useFileScale: 1
+  tangentSpace:
+    normalSmoothAngle: 60
+    normalImportMode: 0
+    tangentImportMode: 3
+  importAnimation: 1
+  copyAvatar: 0
+  humanDescription:
+    human: []
+    skeleton: []
+    armTwist: 0.5
+    foreArmTwist: 0.5
+    upperLegTwist: 0.5
+    legTwist: 0.5
+    armStretch: 0.05
+    legStretch: 0.05
+    feetSpacing: 0
+    rootMotionBoneName: 
+    hasTranslationDoF: 0
+  lastHumanDescriptionAvatarSource: {instanceID: 0}
+  animationType: 2
+  humanoidOversampling: 1
+  additionalBone: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

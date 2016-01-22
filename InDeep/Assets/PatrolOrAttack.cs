@@ -1,0 +1,48 @@
+﻿using UnityEngine;
+using System.Collections;
+using System;
+
+public class PatrolOrAttack : MonoBehaviour {
+
+	public Transform playerOne;
+	public Transform[] patrolPoints;
+	NavMeshAgent enemyAgent;
+	int currentPatrolPoint = 0;
+
+	Action CanPatrol;
+	Action CanAttack;
+
+	void Patrolling() {
+		if (patrolPoints.Length == 0)
+			return;
+		enemyAgent.destination = patrolPoints [currentPatrolPoint].position;
+		
+		currentPatrolPoint = (currentPatrolPoint + 1) % patrolPoints.Length;
+	}
+
+	public void StopPatrolling () {
+		CanPatrol -= Patrolling;
+		CanAttack += Attacking;
+	}
+
+	void Attacking ()
+	{
+		enemyAgent.destination = playerOne.position;
+	}
+	
+	void Update () {
+		if (enemyAgent.remainingDistance < 0.5f) {
+			if(CanPatrol != null)
+				CanPatrol();
+		}
+
+		if (CanAttack != null)
+			CanAttack ();
+	}
+
+	void Start () {
+		enemyAgent = GetComponent<NavMeshAgent> ();
+		enemyAgent.autoBraking = false;
+		CanPatrol += Patrolling;
+	}
+}
