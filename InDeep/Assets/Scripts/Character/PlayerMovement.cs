@@ -5,18 +5,25 @@ public class PlayerMovement : MonoBehaviour {
 
 	Vector3 moveDirection;
 	public float speed = 10;
-
 	CharacterController cc;
-	// Use this for initialization
+
 	void Start () {
 		cc = GetComponent<CharacterController> ();
+		MoveUsingArrowKeys.MoveOnArrows += Move;
+		MoveUsingButtons.Forward += Move;
+
+		MoveUsingArrowKeys.RotateOnArrows += Rotate;
+		MoveUsingButtons.Rotate += Rotate;
 	}
 
-	// Update is called once per frame
-	void Update () {
-		moveDirection.z = Input.GetAxis("Vertical");
-		transform.Rotate (0, Input.GetAxis("Horizontal"), 0);
-		moveDirection = transform.TransformDirection (moveDirection*Time.deltaTime);
+	void Rotate (float _rotateInY)
+	{
+		transform.Rotate (0, _rotateInY, 0);
+	}
+
+	void Move (float _moveInZ) {
+		moveDirection.z = _moveInZ;
+		moveDirection = transform.TransformDirection (moveDirection*speed*Time.deltaTime);
 		cc.Move (moveDirection);
 	}
 }
