@@ -23,6 +23,7 @@ public class PatrolOrAttack : MonoBehaviour {
 	public void StopPatrolling () {
 		CanPatrol -= Patrolling;
 		CanAttack += Attacking;
+		enemyAgent.speed = 7;
 	}
 
 	void Attacking ()
@@ -42,7 +43,6 @@ public class PatrolOrAttack : MonoBehaviour {
 
 	void Start () {
 		enemyAgent = GetComponent<NavMeshAgent> ();
-		enemyAgent.autoBraking = false;
 		CanPatrol += Patrolling;
 	}
 }
