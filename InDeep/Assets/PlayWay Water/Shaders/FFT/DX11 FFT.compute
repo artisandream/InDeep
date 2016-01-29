@@ -1,0 +1,82 @@
+﻿#pragma kernel Butterfly HORIZONTAL R=256 B=7 TYPE=float2 SINGLE OUTPUT_TYPE=float2
+#pragma kernel Butterfly VERTICAL R=256 B=7 TYPE=float2 SINGLE OUTPUT_TYPE=float
+#pragma kernel Butterfly HORIZONTAL R=512 B=8 TYPE=float2 SINGLE OUTPUT_TYPE=float2
+#pragma kernel Butterfly VERTICAL R=512 B=8 TYPE=float2 SINGLE OUTPUT_TYPE=float
+#pragma kernel Butterfly HORIZONTAL R=1024 B=9 TYPE=float2 SINGLE OUTPUT_TYPE=float2
+#pragma kernel Butterfly VERTICAL R=1024 B=9 TYPE=float2 SINGLE OUTPUT_TYPE=float
+
+#pragma kernel Butterfly HORIZONTAL R=256 B=7 TYPE=float4 OUTPUT_TYPE=float4
+#pragma kernel Butterfly VERTICAL R=256 B=7 TYPE=float4 OUTPUT_TYPE=float2
+#pragma kernel Butterfly HORIZONTAL R=512 B=8 TYPE=float4 OUTPUT_TYPE=float4
+#pragma kernel Butterfly VERTICAL R=512 B=8 TYPE=float4 OUTPUT_TYPE=float2
+#pragma kernel Butterfly HORIZONTAL R=1024 B=9 TYPE=float4 OUTPUT_TYPE=float4
+#pragma kernel Butterfly VERTICAL R=1024 B=9 TYPE=float4 OUTPUT_TYPE=float2
+
+Texture2D<TYPE> _SourceTex  : register(t0);
+Texture2D<float4> _ButterflyTex  : register(t1);
+RWTexture2D<OUTPUT_TYPE> _TargetTex  : register(u0);
+
+groupshared TYPE pingPongArray[2][R];
+
+void ButterflyPass(int passIndex, uint x, uint i, out TYPE result)
+{
+	float4 butterfly = _ButterflyTex[uint2(x, passIndex)];
+	uint2 indices = butterfly.xy;
+	float2 weights = butterfly.zw;
+
+	TYPE a1 = pingPongArray[i][indices.x];
+	TYPE b1 = pingPongArray[i][indices.y];
+
+#ifdef SINGLE
+	result.x = a1.x + weights.x*b1.x - weights.y*b1.y;
+	result.y = a1.y + weights.y*b1.x + weights.x*b1.y;
+#else
+	result.xz = a1.xz + weights.x*b1.xz - weights.y*b1.yw;
+	result.yw = a1.yw + weights.y*b1.xz + weights.x*b1.yw;
+#endif
+}
+
+void ButterflyPassReal(int passIndex, uint x, uint i, out OUTPUT_TYPE result)
+{
+	float4 butterfly = _ButterflyTex[uint2(x, passIndex)];
+	uint2 indices = butterfly.xy;
+	float2 weights = butterfly.zw;
+
+	TYPE a1 = pingPongArray[i][indices.x];
+	TYPE b1 = pingPongArray[i][indices.y];
+
+#ifdef SINGLE
+	result.x = a1.x + weights.x*b1.x - weights.y*b1.y;
+#else
+	result.xy = a1.xz + weights.x*b1.xz - weights.y*b1.yw;
+#endif
+}
+
+[numthreads( R, 1, 1 )]
+void Butterfly(uint2 position : SV_DispatchThreadID)
+{
+#ifdef HORIZONTAL
+	uint2 uv = position.xy;
+#else
+	uint2 uv = position.yx;
+#endif
+
+	pingPongArray[0][position.x] = _SourceTex[uv];
+	
+	uint2 textureIndices = uint2(0, 1);
+
+	for (int i = 0; i < B; i++)
+	{
+		GroupMemoryBarrierWithGroupSync();
+		ButterflyPass( i, position.x, textureIndices.x, pingPongArray[textureIndices.y][position.x]);
+		textureIndices.xy = textureIndices.yx;
+	}
+
+	GroupMemoryBarrierWithGroupSync();
+
+#if VERTICAL
+	ButterflyPassReal(B, position.x, textureIndices.x, _TargetTex[uv]);
+#else
+	ButterflyPass(B, position.x, textureIndices.x, _TargetTex[uv]);
+#endif
+}
