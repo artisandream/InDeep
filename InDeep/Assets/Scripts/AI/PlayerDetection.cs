@@ -2,10 +2,15 @@
 using System.Collections;
 
 public class PlayerDetection : MonoBehaviour {
-	
-	public PatrolOrAttack enemyPatrolScript;
 
-	void OnTriggerEnter () {
+	[HideInInspector]
+	public PatrolOrAttack enemyPatrolScript;	
+
+	void Start () {
+		enemyPatrolScript = transform.parent.GetComponent<PatrolOrAttack> ();
+	}
+
+	public virtual void OnTriggerEnter () {
 		enemyPatrolScript.StopPatrolling ();
 	}
 }
