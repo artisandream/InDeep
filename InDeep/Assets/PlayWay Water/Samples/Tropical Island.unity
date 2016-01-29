@@ -1498,12 +1498,12 @@ Transform:
   m_ObjectHideFlags: 0
   m_PrefabParentObject: {fileID: 400038, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
   m_PrefabInternal: {fileID: 1186922631}
-  m_GameObject: {fileID: 1222888463}
+  m_GameObject: {fileID: 1390166769}
   m_LocalRotation: {x: 0.07022941, y: -0.70361066, z: -0.07022942, w: -0.70361054}
   m_LocalPosition: {x: 186.6, y: 33, z: 438}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_Children:
-  - {fileID: 1716299287}
+  - {fileID: 1660544561}
   m_Father: {fileID: 150014125}
   m_RootOrder: 11
 --- !u!1001 &1186922631
@@ -1583,42 +1583,8 @@ Prefab:
       objectReference: {fileID: 9100000, guid: 9feab8ca181aa31409e5f8c70e1d4348, type: 2}
     m_RemovedComponents: []
   m_ParentPrefab: {fileID: 100100000, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_RootGameObject: {fileID: 1222888463}
+  m_RootGameObject: {fileID: 1390166769}
   m_IsPrefabParent: 0
---- !u!1 &1222888463
-GameObject:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 100038, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_PrefabInternal: {fileID: 1186922631}
-  serializedVersion: 4
-  m_Component:
-  - 4: {fileID: 1173237119}
-  - 95: {fileID: 1222888464}
-  m_Layer: 0
-  m_Name: Seagull_Fly
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!95 &1222888464
-Animator:
-  serializedVersion: 3
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 9500000, guid: 9d040ef73f3ded746a175a15dddb9424,
-    type: 3}
-  m_PrefabInternal: {fileID: 1186922631}
-  m_GameObject: {fileID: 1222888463}
-  m_Enabled: 1
-  m_Avatar: {fileID: 9000000, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_Controller: {fileID: 9100000, guid: 9feab8ca181aa31409e5f8c70e1d4348, type: 2}
-  m_CullingMode: 1
-  m_UpdateMode: 0
-  m_ApplyRootMotion: 1
-  m_LinearVelocityBlending: 0
-  m_WarningMessage: 
-  m_HasTransformHierarchy: 0
-  m_AllowConstantClipSamplingOptimization: 1
 --- !u!1 &1258514133
 GameObject:
   m_ObjectHideFlags: 0
@@ -1903,6 +1869,40 @@ CanvasRenderer:
   m_PrefabParentObject: {fileID: 0}
   m_PrefabInternal: {fileID: 0}
   m_GameObject: {fileID: 1367118805}
+--- !u!1 &1390166769
+GameObject:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 100038, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
+  m_PrefabInternal: {fileID: 1186922631}
+  serializedVersion: 4
+  m_Component:
+  - 4: {fileID: 1173237119}
+  - 95: {fileID: 1390166770}
+  m_Layer: 0
+  m_Name: Seagull_Fly
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!95 &1390166770
+Animator:
+  serializedVersion: 3
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 9500000, guid: 9d040ef73f3ded746a175a15dddb9424,
+    type: 3}
+  m_PrefabInternal: {fileID: 1186922631}
+  m_GameObject: {fileID: 1390166769}
+  m_Enabled: 1
+  m_Avatar: {fileID: 9000000, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
+  m_Controller: {fileID: 9100000, guid: 9feab8ca181aa31409e5f8c70e1d4348, type: 2}
+  m_CullingMode: 1
+  m_UpdateMode: 0
+  m_ApplyRootMotion: 1
+  m_LinearVelocityBlending: 0
+  m_WarningMessage: 
+  m_HasTransformHierarchy: 0
+  m_AllowConstantClipSamplingOptimization: 1
 --- !u!1 &1398331824
 GameObject:
   m_ObjectHideFlags: 0
@@ -2553,6 +2553,72 @@ Transform:
   m_Children: []
   m_Father: {fileID: 150014125}
   m_RootOrder: 6
+--- !u!1 &1660544560
+GameObject:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 100036, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
+  m_PrefabInternal: {fileID: 1186922631}
+  serializedVersion: 4
+  m_Component:
+  - 4: {fileID: 1660544561}
+  - 137: {fileID: 1660544562}
+  m_Layer: 0
+  m_Name: Seagull (2)
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &1660544561
+Transform:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 400036, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
+  m_PrefabInternal: {fileID: 1186922631}
+  m_GameObject: {fileID: 1660544560}
+  m_LocalRotation: {x: -0.000000010895391, y: 0.96843725, z: 0.24925749, w: 0.000000042331738}
+  m_LocalPosition: {x: 0, y: -0.0016, z: 0.04}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_Children: []
+  m_Father: {fileID: 1173237119}
+  m_RootOrder: 0
+--- !u!137 &1660544562
+SkinnedMeshRenderer:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 13700000, guid: 9d040ef73f3ded746a175a15dddb9424,
+    type: 3}
+  m_PrefabInternal: {fileID: 1186922631}
+  m_GameObject: {fileID: 1660544560}
+  m_Enabled: 1
+  m_CastShadows: 1
+  m_ReceiveShadows: 1
+  m_Materials:
+  - {fileID: 2100000, guid: faaee68377c193244a69e786d58b8271, type: 2}
+  m_SubsetIndices: 
+  m_StaticBatchRoot: {fileID: 0}
+  m_UseLightProbes: 1
+  m_ReflectionProbeUsage: 1
+  m_ProbeAnchor: {fileID: 0}
+  m_ScaleInLightmap: 1
+  m_PreserveUVs: 0
+  m_IgnoreNormalsForChartDetection: 0
+  m_ImportantGI: 0
+  m_MinimumChartSize: 4
+  m_AutoUVMaxDistance: 0.5
+  m_AutoUVMaxAngle: 89
+  m_LightmapParameters: {fileID: 0}
+  m_SortingLayerID: 0
+  m_SortingOrder: 0
+  serializedVersion: 2
+  m_Quality: 0
+  m_UpdateWhenOffscreen: 0
+  m_Mesh: {fileID: 4300000, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
+  m_Bones: []
+  m_BlendShapeWeights: []
+  m_RootBone: {fileID: 0}
+  m_AABB:
+    m_Center: {x: -0.002878487, y: 0.14305255, z: 0.022113532}
+    m_Extent: {x: 1.2416451, y: 0.36190274, z: 0.5481707}
+  m_DirtyAABB: 0
 --- !u!1 &1679616774
 GameObject:
   m_ObjectHideFlags: 0
@@ -2684,72 +2750,6 @@ Transform:
   m_Children: []
   m_Father: {fileID: 150014125}
   m_RootOrder: 5
---- !u!1 &1716299286
-GameObject:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 100036, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_PrefabInternal: {fileID: 1186922631}
-  serializedVersion: 4
-  m_Component:
-  - 4: {fileID: 1716299287}
-  - 137: {fileID: 1716299288}
-  m_Layer: 0
-  m_Name: Seagull (2)
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 1
---- !u!4 &1716299287
-Transform:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 400036, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_PrefabInternal: {fileID: 1186922631}
-  m_GameObject: {fileID: 1716299286}
-  m_LocalRotation: {x: -0.000000010895391, y: 0.96843725, z: 0.24925749, w: 0.000000042331738}
-  m_LocalPosition: {x: 0, y: -0.0016, z: 0.04}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_Children: []
-  m_Father: {fileID: 1173237119}
-  m_RootOrder: 0
---- !u!137 &1716299288
-SkinnedMeshRenderer:
-  m_ObjectHideFlags: 0
-  m_PrefabParentObject: {fileID: 13700000, guid: 9d040ef73f3ded746a175a15dddb9424,
-    type: 3}
-  m_PrefabInternal: {fileID: 1186922631}
-  m_GameObject: {fileID: 1716299286}
-  m_Enabled: 1
-  m_CastShadows: 1
-  m_ReceiveShadows: 1
-  m_Materials:
-  - {fileID: 2100000, guid: faaee68377c193244a69e786d58b8271, type: 2}
-  m_SubsetIndices: 
-  m_StaticBatchRoot: {fileID: 0}
-  m_UseLightProbes: 1
-  m_ReflectionProbeUsage: 1
-  m_ProbeAnchor: {fileID: 0}
-  m_ScaleInLightmap: 1
-  m_PreserveUVs: 0
-  m_IgnoreNormalsForChartDetection: 0
-  m_ImportantGI: 0
-  m_MinimumChartSize: 4
-  m_AutoUVMaxDistance: 0.5
-  m_AutoUVMaxAngle: 89
-  m_LightmapParameters: {fileID: 0}
-  m_SortingLayerID: 0
-  m_SortingOrder: 0
-  serializedVersion: 2
-  m_Quality: 0
-  m_UpdateWhenOffscreen: 0
-  m_Mesh: {fileID: 4300000, guid: 9d040ef73f3ded746a175a15dddb9424, type: 3}
-  m_Bones: []
-  m_BlendShapeWeights: []
-  m_RootBone: {fileID: 0}
-  m_AABB:
-    m_Center: {x: -0.002878487, y: 0.14305255, z: 0.022113532}
-    m_Extent: {x: 1.2416451, y: 0.36190274, z: 0.5481707}
-  m_DirtyAABB: 0
 --- !u!1 &1728857160
 GameObject:
   m_ObjectHideFlags: 0
