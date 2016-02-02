@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Editor/Inspect Texture"
+Shader "PlayWay Water/Editor/Inspect Texture"
 {
 	Properties
 	{

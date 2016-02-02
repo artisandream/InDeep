@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/Noise"
+Shader "PlayWay Water/Utilities/Noise"
 {
 	Properties
 	{

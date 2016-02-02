@@ -1,8 +1,8 @@
-﻿Shader "PlayWay Water/Underwater/Compose Underwater Mask"
+Shader "PlayWay Water/Underwater/Compose Underwater Mask"
 {
 	Properties
 	{
-		_Intensity ("Intensity", Float) = 1.0
+		_MainTex("", 2D) = "white" {}
 	}
 
 	CGINCLUDE
@@ -21,8 +21,7 @@
 		float2 uv	: TEXCOORD0;
 	};
 
-	sampler2D _WaterMask;
-	half _Intensity;
+	sampler2D _MainTex;
 
 	VertexOutput vert (VertexInput vi)
 	{
@@ -35,20 +34,18 @@
 
 	fixed4 frag(VertexOutput vo) : SV_Target
 	{
-		half3 c = tex2D(_WaterMask, vo.uv);
-		return c.x > 900000 ? c.z : 0;
+		half4 c = tex2D(_MainTex, vo.uv);
+		return c.y > 900000 ? c.w : 1;
 	}
 
 	ENDCG
 
 	SubShader
 	{
-		Tags { "RenderType"="Transparent" "PerformanceChecks"="False" "Queue"="Transparent" }
-
 		Pass
 		{
 			ZTest Always Cull Off ZWrite Off
-			Blend One One
+			Blend Zero SrcColor
 			ColorMask R
 
 			CGPROGRAM

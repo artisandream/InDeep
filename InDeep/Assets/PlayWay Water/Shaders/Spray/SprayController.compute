@@ -1,4 +1,4 @@
-﻿#pragma kernel UpdateParticles
+#pragma kernel UpdateParticles
 #pragma kernel ClearParticles
 
 struct ParticleData
@@ -29,9 +29,7 @@ void UpdateParticles (uint3 id : SV_DispatchThreadID)
 	{
 		ParticleData particle = SourceParticles[id.x];
 		particle.lifetime.x -= deltaTime;
-		//particle.lifetime.y += deltaTime;
 		particle.velocity *= (1.0 - deltaTime * 0.2);
-		//particle.velocity.y -= 9.81 * deltaTime;
 		particle.velocity += externalForces.xyz;
 		
 		if(particle.lifetime.x > 0)

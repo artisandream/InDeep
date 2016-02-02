@@ -18,11 +18,27 @@ namespace PlayWay.WaterEditor
 			PropertyField("renderVolumes", "Render Volumes");
 
 			PropertyField("sharedCommandBuffers", "Shared Command Buffers");
+			PropertyField("baseEffectsQuality", "Base Effects Quality");
 
 			if(camera.farClipPlane < 100.0f)
-				EditorGUILayout.HelpBox("Your camera farClipPlane is set below 100 units. It may be too low for the underwater effects to \"see\" the max depth. They may produce some artifacts.", MessageType.Warning, true);
+				EditorGUILayout.HelpBox("Your camera farClipPlane is set below 100 units. It may be too low for the underwater effects to \"see\" the max depth and they may produce some artifacts.", MessageType.Warning, true);
 
 			serializedObject.ApplyModifiedProperties();
 		}
+
+		/*private void DisplayTexturesInspector()
+		{
+			var waterCamera = (WaterCamera)target;
+		}
+
+		private List<WaterMap> GetWaterMaps()
+		{
+			var camera = (WaterCamera)target;
+			var textures = new List<WaterMap>();
+
+			textures.Add(new WaterMap("WaterCamera - SubtractiveMask", () => camera.SubtractiveMask));
+
+			return textures;
+		}*/
 	}
 }

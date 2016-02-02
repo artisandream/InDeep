@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/Blur (Near)"
+Shader "PlayWay Water/Utilities/Blur (Near)"
 {
 	Properties
 	{

@@ -1,20 +1,24 @@
-﻿#pragma kernel Clear
+//
+// Derived from the paper and accompanying implementation:
+// "Real-time Realistic Ocean Lighting using 
+// Seamless Transitions from Geometry to BRDF"
+// Eric Bruneton, Fabrice Neyret, Nicolas Holzschuch
+//
+
 #pragma kernel Compute
-#pragma kernel MixTo1
-#pragma kernel MixTo2
 
-Texture2D<float4> _Spectrum;
-RWTexture3D<float2> _Variance;
-RWTexture3D<float> _VarianceX;
-RWTexture3D<float> _VarianceY;
-RWTexture3D<float> _PreviousVarianceX;
-RWTexture3D<float> _PreviousVarianceY;
+Texture2D<float4> _Spectrum  : register(t0);
+RWTexture3D<float2> _Variance  : register(u0);
 
-float _FFTSize;
+int _FFTSize;
+int _FFTSizeHalf;
 float _VariancesSize;
-float _TileSize;
-float4 _Coordinates;
-float _MixWeight;
+float4 _TileSizes;
+float3 _Coordinates;
+
+static uint2 offsets[4] = { uint2(0, 0), uint2(1, 0), uint2(0, 1), uint2(1, 1) };
+
+groupshared float2 results[1024];
 
 float2 GetSlopeVariance(float2 k, float A, float B, float C, float2 spectrumSample)
 { 
@@ -23,55 +27,55 @@ float2 GetSlopeVariance(float2 k, float A, float B, float C, float2 spectrumSamp
 	return kw * kw * dot(spectrumSample, spectrumSample) * 2.0; 
 }
 
-[numthreads(4,4,4)]
-void Clear(uint3 id : SV_DispatchThreadID)
-{
-	_VarianceX[id] = 0.0;
-	_VarianceY[id] = 0.0;
-}
-
-[numthreads(4,4,4)]
-void Compute(uint3 id : SV_DispatchThreadID)
+[numthreads(1024, 1, 1)]
+void Compute(uint id : SV_DispatchThreadID)
 {
 	const float SCALE = 10.0;
 	
-	float A = pow(id.x / (_VariancesSize - 1.0), 4.0) * SCALE; 
-	float C = pow(id.z / (_VariancesSize - 1.0), 4.0) * SCALE; 
-	float B = (2.0 * id.y / (_VariancesSize - 1.0) - 1.0) * sqrt(A * C); 
+	float A = pow(_Coordinates.x / (_VariancesSize - 1.0), 4.0) * SCALE; 
+	float C = pow(_Coordinates.z / (_VariancesSize - 1.0), 4.0) * SCALE; 
+	float B = (2.0 * _Coordinates.y / (_VariancesSize - 1.0) - 1.0) * sqrt(A * C); 
 	A = -0.5 * A; 
 	B = -B; 
 	C = -0.5 * C;
 	
+	float start = (id / 1024.0) * _FFTSize;
+	float end = start + _FFTSize / 1024.0;
+	float stepSize = 1.0 / _FFTSize;
+	
 	float2 variance = float2(0.0, 0.0);
 	
-	for(int y = _Coordinates.x; y < _Coordinates.y; ++y)
-	{ 
-		int j = y >= _FFTSize / 2 ? y - _FFTSize : y;
-	
-		for(int x = 0; x < _FFTSize; ++x)
-		{ 
-			int i = x >= _FFTSize / 2 ? x - _FFTSize : x; 
+	for(int scaleIndex=0; scaleIndex<4; ++scaleIndex)
+	{
+		float tileSize = _TileSizes[scaleIndex];
+		uint2 offset = offsets[scaleIndex] * _FFTSize;
+		
+		for(float i=start; i<end; i+=stepSize)
+		{
+			int2 uv;
+			uv.x = round(modf(i, /*out*/ uv.y) * _FFTSize);
 			
-			float2 k = 2.0 * 3.14159 * float2(i, j) / _TileSize;
-
-			float2 spectrum = _Spectrum[uint2(x, y)].xy;
+			int i = uv.x >= _FFTSizeHalf ? uv.x - _FFTSize : uv.x;
+			int j = uv.y >= _FFTSizeHalf ? uv.y - _FFTSize : uv.y;
+			
+			float2 k = 2.0 * 3.14159 * float2(i, j) / tileSize;
+			
+			float2 spectrum = _Spectrum[offset + uv].xy;
 			variance += GetSlopeVariance(k, A, B, C, spectrum);
 		}
 	}
 
-	_VarianceX[id] += variance.x * 6.0;
-	_VarianceY[id] += variance.y * 6.0;
-}
-
-[numthreads(4,4,4)]
-void MixTo1(uint3 id : SV_DispatchThreadID)
-{
-	_Variance[id] = float2(_VarianceX[id], _VarianceY[id]) + float2(_PreviousVarianceX[id], _PreviousVarianceY[id]) * _MixWeight;
-}
-
-[numthreads(4,4,4)]
-void MixTo2(uint3 id : SV_DispatchThreadID)
-{
-	_PreviousVarianceX[id] = _VarianceX[id] + _PreviousVarianceX[id] * _MixWeight;
-	_PreviousVarianceY[id] = _VarianceY[id] + _PreviousVarianceY[id] * _MixWeight;
+	results[id] = variance;
+	
+	GroupMemoryBarrierWithGroupSync();
+	
+	if(id == 0)
+	{
+		variance = float2(0.0, 0.0);
+		
+		for(int i=0; i<1024; ++i)
+			variance += results[i];
+			
+		_Variance[_Coordinates] = variance.yx;
+	}
 }

@@ -45,7 +45,7 @@ namespace PlayWay.Water
 		/// <summary>
 		/// Enabled waters in the current scene.
 		/// </summary>
-		public IList<Water> Waters
+		public List<Water> Waters
 		{
 			get { return waters; }
 		}

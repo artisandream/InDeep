@@ -12,25 +12,26 @@ MonoBehaviour:
   m_Name: WaterQualitySettings
   m_EditorClassIdentifier: 
   qualityLevels:
-  - name: 46617374657374
-    maxSpectrumResolution: 256
+  - name: Fastest
+    maxSpectrumResolution: 32
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 1
     tileSizeScale: 0.8
-    wavesMode: 2
+    wavesMode: 0
     allowSpray: 1
     foamQuality: 1
     allowVolumetricLighting: 1
     maxTesselationFactor: 0.52
     maxVertexCount: 90000
-    maxTesselatedVertexCount: 30000
+    maxTesselatedVertexCount: 10000
     allowAlphaBlending: 1
-  - name: 46617374
-    maxSpectrumResolution: 256
+    allowHighQualityReflections: 0
+  - name: Fast
+    maxSpectrumResolution: 64
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 1
     tileSizeScale: 0.8
-    wavesMode: 1
+    wavesMode: 0
     allowSpray: 1
     foamQuality: 1
     allowVolumetricLighting: 1
@@ -38,8 +39,9 @@ MonoBehaviour:
     maxVertexCount: 100000
     maxTesselatedVertexCount: 40000
     allowAlphaBlending: 1
-  - name: 53696d706c65
-    maxSpectrumResolution: 256
+    allowHighQualityReflections: 0
+  - name: Simple
+    maxSpectrumResolution: 128
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 0
     tileSizeScale: 0.8
@@ -51,8 +53,9 @@ MonoBehaviour:
     maxVertexCount: 150000
     maxTesselatedVertexCount: 80000
     allowAlphaBlending: 1
-  - name: 476f6f64
-    maxSpectrumResolution: 512
+    allowHighQualityReflections: 0
+  - name: Good
+    maxSpectrumResolution: 128
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 0
     tileSizeScale: 0.8
@@ -64,8 +67,9 @@ MonoBehaviour:
     maxVertexCount: 240000
     maxTesselatedVertexCount: 85000
     allowAlphaBlending: 1
-  - name: 42656175746966756c
-    maxSpectrumResolution: 1024
+    allowHighQualityReflections: 0
+  - name: Beautiful
+    maxSpectrumResolution: 256
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 0
     tileSizeScale: 1
@@ -77,8 +81,9 @@ MonoBehaviour:
     maxVertexCount: 330000
     maxTesselatedVertexCount: 90000
     allowAlphaBlending: 1
-  - name: 46616e746173746963
-    maxSpectrumResolution: 1024
+    allowHighQualityReflections: 0
+  - name: Fantastic
+    maxSpectrumResolution: 256
     allowHighPrecisionTextures: 0
     allowHighQualitySlopeMaps: 1
     tileSizeScale: 1
@@ -90,5 +95,6 @@ MonoBehaviour:
     maxVertexCount: 500000
     maxTesselatedVertexCount: 120000
     allowAlphaBlending: 1
+    allowHighQualityReflections: 1
   synchronizeWithUnity: 1
-  savedCustomQualityLevel: 0
+  savedCustomQualityLevel: 5

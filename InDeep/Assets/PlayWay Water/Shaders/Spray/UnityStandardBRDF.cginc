@@ -12,6 +12,10 @@ half4 unity_LightGammaCorrectionConsts;
 #define unity_LightGammaCorrectionConsts_8 (unity_LightGammaCorrectionConsts.z)
 #define unity_LightGammaCorrectionConsts_SqrtHalfPI (unity_LightGammaCorrectionConsts.w)
 
+// water
+half		_SpecularFresnelBias;
+half4		_WrapSubsurfaceScatteringPack;
+
 inline half DotClamped (half3 a, half3 b)
 {
 	#if (SHADER_TARGET < 30)
@@ -290,6 +294,17 @@ inline half3 Unity_SafeNormalize(half3 inVec)
 // purposes, mostly for DX9 SM2.0 level. Most of the math is being done on these (1-x) values, and that saves
 // a few precious ALU slots.
 
+inline half3 FresnelTerm(half3 F0, half cosA, half bias)
+{
+	half t = bias + (1.0 - bias) * Pow5(1 - cosA);	// ala Schlick interpoliation
+	return F0 + (1 - F0) * t;
+}
+
+inline half3 FresnelLerp(half3 F0, half3 F90, half cosA, half bias)
+{
+	half t = bias + (1.0 - bias) * Pow5(1 - cosA);	// ala Schlick interpoliation
+	return lerp(F0, F90, t);
+}
 
 // Main Physically Based BRDF
 // Derived from Disney work and based on Torrance-Sparrow micro-facet model
@@ -315,6 +330,12 @@ half4 BRDF1_Unity_PBS (half3 diffColor, half3 specColor, half oneMinusReflectivi
 	half lv = DotClamped (light.dir, viewDir);
 	half lh = DotClamped (light.dir, halfDir);
 
+#if defined(POINT) || defined(SPOT) || defined(POINT_COOKIE)
+	nl = (nl + _WrapSubsurfaceScatteringPack.z) * _WrapSubsurfaceScatteringPack.w;
+#else
+	nl = (nl + _WrapSubsurfaceScatteringPack.x) * _WrapSubsurfaceScatteringPack.y;
+#endif
+
 #if UNITY_BRDF_GGX
 	half V = SmithGGXVisibilityTerm (nl, nv, roughness);
 	half D = GGXTerm (nh, roughness);
@@ -333,15 +354,16 @@ half4 BRDF1_Unity_PBS (half3 diffColor, half3 specColor, half oneMinusReflectivi
 	// and 2) on engine side "Non-important" lights have to be divided by Pi to in cases when they are injected into ambient SH
 	// NOTE: multiplication by Pi is part of single constant together with 1/4 now
 
-	half specularTerm = max(0, (V * D * nl) * unity_LightGammaCorrectionConsts_PIDiv4);// Torrance-Sparrow model, Fresnel is applied later (for optimization reasons)
+	half pix4inv = 0.07958;			// 1 / 4pi
+	half specularTerm = max(0, (V * D * nl) * pix4inv);// Torrance-Sparrow model, Fresnel is applied later (for optimization reasons)
 	half diffuseTerm = disneyDiffuse * nl;
 
 	//specularTerm = pow(specularTerm, 0.25);
 	
 	half grazingTerm = saturate(oneMinusRoughness + (1-oneMinusReflectivity));
     half3 color =	diffColor * (gi.diffuse + light.color * diffuseTerm)
-                    + specularTerm * light.color * FresnelTerm (specColor, lh)
-					+ gi.specular * FresnelLerp (specColor, grazingTerm, nv);
+                    + specularTerm * light.color * FresnelTerm (specColor, lh, _SpecularFresnelBias)
+					+ gi.specular * FresnelLerp (specColor, grazingTerm, nv, _SpecularFresnelBias);
 
 	return half4(color, 1);
 }

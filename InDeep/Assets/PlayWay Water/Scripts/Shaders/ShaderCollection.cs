@@ -1,63 +1,132 @@
 ﻿using UnityEngine;
-using System.Linq;
 
-/// <summary>
-/// Stores references to materials with choosen keywords to include them in builds.
-/// </summary>
-public class ShaderCollection : ScriptableObject
+namespace PlayWay.Water
 {
-	[SerializeField]
-	private Material[] materials;
-
-	public void AddShaderVariant(Shader shader, string[] keywords)
+	/// <summary>
+	/// Stores references to materials with chosen keywords to include them in builds.
+	/// </summary>
+	[System.Serializable]
+	public class ShaderCollection : ScriptableObject
 	{
+		[SerializeField]
+		private Shader[] shaders;
+
 #if UNITY_EDITOR
-		if(!ContainsShaderVariant(shader, keywords))
+		private bool rebuilding;
+		static public IShaderCollectionBuilder shaderCollectionBuilder;
+#endif
+
+		static bool errorDisplayed;
+
+		static public Shader GetRuntimeShaderVariant(string keywordsString, bool volume)
 		{
-			System.Array.Resize(ref materials, materials.Length + 1);
+			var shader = Shader.Find("PlayWay Water/Variations/Water " + (volume ? "Volume " : "") + keywordsString);
 
-			var material = new Material(shader);
-			material.name = string.Join(" ", keywords);
-			material.shaderKeywords = keywords;
-			materials[materials.Length - 1] = material;
+			if(shader == null && !errorDisplayed)
+			{
+				Debug.LogError("Could not find proper water shader variation. Select your water and click \"Save Asset\" button to build proper shaders. Missing shader: \"" + "PlayWay Water/Variations/Water " + (volume ? "Volume " : "") + keywordsString + "\"");
+				errorDisplayed = true;
+            }
 
-			UnityEditor.AssetDatabase.AddObjectToAsset(material, this);
+			return shader;
+		}
+
+		public Shader GetShaderVariant(string[] localKeywords, string[] sharedKeywords, string keywordsString, bool volume)
+		{
+			System.Array.Sort(localKeywords);
+			System.Array.Sort(sharedKeywords);
+			string shaderNameEnd = (volume ? "Volume " : "") + keywordsString;
+
+#if UNITY_EDITOR
+			if(shaders != null)
+			{
+				foreach(var shader in shaders)
+				{
+					if(shader != null && shader.name.EndsWith(shaderNameEnd))
+						return shader;                                 // already added
+				}
+			}
+
+			if(!rebuilding)
+			{
+				var shader2 = Shader.Find("PlayWay Water/Variations/Water " + shaderNameEnd);
+
+				if(shader2 != null)
+				{
+					AddShader(shader2);
+					return shader2;
+				}
+			}
+
+			if(shaderCollectionBuilder != null)
+			{
+				var shader = shaderCollectionBuilder.BuildShaderVariant(localKeywords, sharedKeywords, keywordsString, volume);
+				AddShader(shader);
+
+				return shader;
+			}
+			else
+			{
+				Debug.LogError("Shader Collection Builder is null in editor.");
+
+				return null;
+			}
+#else
+			return Shader.Find("PlayWay Water/Variations/Water " + shaderNameEnd);
+#endif
+		}
+
+		public Shader[] GetShadersDirect()
+		{
+			return shaders;
+		}
+
+		public void Build()
+		{
+#if UNITY_EDITOR
+			try
+			{
+				rebuilding = true;
+				shaderCollectionBuilder.BuildSceneShaderCollection(this);
+			}
+			finally
+			{
+				rebuilding = false;
+            }
+#endif
+		}
+
+		public bool ContainsShaderVariant(string keywordsString)
+		{
+			if(shaders != null)
+			{
+				foreach(var shader in shaders)
+				{
+					if(shader != null && shader.name.EndsWith(keywordsString))
+						return true;                                 // already added
+				}
+			}
+
+			return false;
+		}
+
+		private void AddShader(Shader shader)
+		{
+			if(shaders != null)
+			{
+				System.Array.Resize(ref shaders, shaders.Length + 1);
+				shaders[shaders.Length - 1] = shader;
+			}
+			else
+				shaders = new Shader[] { shader };
+		}
+
+#if UNITY_EDITOR
+		public void Clear()
+		{
+			shaders = new Shader[0];
 			UnityEditor.EditorUtility.SetDirty(this);
-
-			//UnityEditor.AssetDatabase.SaveAssets();
-			//UnityEditor.AssetDatabase.Refresh();
 		}
 #endif
-	}
-
-	public void Clear()
-	{
-#if UNITY_EDITOR
-		foreach(var material in materials)
-			DestroyImmediate(material, true);
-
-		materials = new Material[0];
-
-		UnityEditor.EditorUtility.SetDirty(this);
-#endif
-	}
-
-	public bool ContainsShaderVariant(Shader shader, string[] keywords)
-	{
-		if(materials == null)
-			materials = new Material[0];
-
-		foreach(var material in materials)
-		{
-			if(material.shader == shader && SameKeywords(material.shaderKeywords, keywords))
-				return true;
-		}
-
-		return false;
-	}
-
-	private bool SameKeywords(string[] a, string[] b)
-	{
-		return !a.Except(b).Any() && !b.Except(a).Any();
 	}
 }

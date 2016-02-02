@@ -4,41 +4,84 @@ namespace PlayWay.Water
 {
 	public class WaterProjectSettings : ScriptableObjectSingleton
 	{
-		[SerializeField]
-		private int waterVolumesLayer = 20;
+		static public readonly float CurrentVersion = 1.14f;            // 1.1 RC4
+		static public readonly string CurrentVersionString = "1.1 RC4";
 
 		[SerializeField]
-		private bool waterMasksEnabled = false;
+		private int waterLayer = 4;
+
+		[Tooltip("Used for some camera effects. Needs to be unused. You don't need to mask it on your cameras.")]
+		[SerializeField]
+		private int waterTempLayer = 22;
+
+		[Tooltip("More threads increase physics precision under stress, but also decrease overall performance a bit.")]
+		[SerializeField]
+		private int physicsThreads = 1;
 
 		[SerializeField]
-		private int waterMasksLayer = 21;
+		private System.Threading.ThreadPriority physicsThreadsPriority = System.Threading.ThreadPriority.BelowNormal;
 
+		[SerializeField]
+		private bool allowCpuFFT = true;
+
+		[Tooltip("Some hardware doesn't support floating point mip maps correctly and they are forcefully disabled. You may simulate how the water would look like on such hardware by disabling this option. Most notably fp mip maps don't work correctly on most AMD graphic cards (for now).")]
+		[SerializeField]
+		private bool allowFloatingPointMipMaps = true;
+
+		[SerializeField]
+		private bool debugPhysics = false;
+		
 		static private WaterProjectSettings instance;
+		static private bool noInstance = true;
 
 		static public WaterProjectSettings Instance
 		{
 			get
 			{
-				if(instance == null)
+				if(noInstance)			// performance
+				{
 					instance = LoadSingleton<WaterProjectSettings>();
+					noInstance = false;
+				}
 
 				return instance;
 			}
 		}
 
-		public int WaterVolumesLayer
+		public int PhysicsThreads
 		{
-			get { return waterVolumesLayer; }
+			get { return physicsThreads; }
+			set { physicsThreads = value; }
 		}
 
-		public bool WaterMasksEnabled
+		public int WaterLayer
 		{
-			get { return waterMasksEnabled; }
+			get { return waterLayer; }
 		}
 
-		public int WaterMasksLayer
+		public int WaterTempLayer
 		{
-			get { return waterMasksLayer; }
+			get { return waterTempLayer; }
+		}
+
+		public System.Threading.ThreadPriority PhysicsThreadsPriority
+		{
+			get { return physicsThreadsPriority; }
+		}
+
+		public bool AllowCpuFFT
+		{
+			get { return allowCpuFFT; }
+		}
+
+		public bool AllowFloatingPointMipMaps
+		{
+			get { return allowFloatingPointMipMaps; }
+		}
+
+		public bool DebugPhysics
+		{
+			get { return debugPhysics; }
 		}
 	}
 }

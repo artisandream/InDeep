@@ -1,6 +1,5 @@
 ﻿using System.Collections.Generic;
 using UnityEngine;
-using System.Linq;
 
 namespace PlayWay.Water
 {
@@ -26,7 +25,7 @@ namespace PlayWay.Water
 		{
 			get
 			{
-				if(instance == null)
+				if((object)instance == null)
 				{
 					instance = LoadSingleton<WaterQualitySettings>();
 					instance.Changed = null;
@@ -40,7 +39,15 @@ namespace PlayWay.Water
 
 		public string[] Names
 		{
-			get { return qualityLevels.Select(l => l.name).ToArray(); }
+			get
+			{
+				string[] names = new string[qualityLevels.Length];
+
+				for(int i = 0; i < qualityLevels.Length; ++i)
+					names[i] = qualityLevels[i].name;
+
+				return names;
+			}
 		}
 
 		public int MaxSpectrumResolution
@@ -173,6 +180,19 @@ namespace PlayWay.Water
             }
 		}
 
+		public bool AllowHighQualityReflections
+		{
+			get { return currentQualityLevel.allowHighQualityReflections; }
+			set
+			{
+				if(currentQualityLevel.allowHighQualityReflections == value)
+					return;
+
+				currentQualityLevel.allowHighQualityReflections = value;
+				OnChange();
+			}
+		}
+
 		/// <summary>
 		/// Are water quality settings synchronized with Unity?
 		/// </summary>
@@ -188,26 +208,37 @@ namespace PlayWay.Water
 
 		public void SetQualityLevel(int index)
 		{
+			if(!Application.isPlaying)
+				savedCustomQualityLevel = index;
+
 			currentQualityLevel = qualityLevels[index];
 			waterQualityIndex = index;
 
 			OnChange();
         }
-
+		
 		/// <summary>
 		/// Synchronizes current water quality level with the one set in Unity quality settings.
 		/// </summary>
 		public void SynchronizeQualityLevel()
 		{
-			int currentQualityIndex = synchronizeWithUnity ? QualitySettings.GetQualityLevel() : savedCustomQualityLevel;
-
-			if(currentQualityIndex != waterQualityIndex)
-				SetQualityLevel(currentQualityIndex);
-
 #if UNITY_EDITOR
 			if(!Application.isPlaying && synchronizeWithUnity)
 				SynchronizeLevelNames();
 #endif
+
+			int currentQualityIndex = -1;
+
+			if(synchronizeWithUnity)
+				currentQualityIndex = FindQualityLevel(QualitySettings.names[QualitySettings.GetQualityLevel()]);
+
+			if(currentQualityIndex == -1)
+				currentQualityIndex = savedCustomQualityLevel;
+
+			currentQualityIndex = Mathf.Clamp(currentQualityIndex, 0, qualityLevels.Length - 1);
+			
+			if(currentQualityIndex != waterQualityIndex)
+				SetQualityLevel(currentQualityIndex);
 		}
 
 		internal WaterQualityLevel[] GetQualityLevelsDirect()
@@ -226,6 +257,17 @@ namespace PlayWay.Water
 				Changed();
 		}
 
+		private int FindQualityLevel(string name)
+		{
+			for(int i=0; i<qualityLevels.Length; ++i)
+			{
+				if(qualityLevels[i].name == name)
+					return i;
+			}
+
+			return -1;
+		}
+
 		/// <summary>
 		/// Ensures that water quality settings are named the same way that Unity ones.
 		/// </summary>
@@ -236,7 +278,7 @@ namespace PlayWay.Water
 				qualityLevels = new WaterQualityLevel[0];
 
 			string[] unityNames = QualitySettings.names;
-			var currentNames = qualityLevels.Select(l => l.name);
+			var currentNames = Names;
 			int index = 0;
 			bool noChanges = true;
 
@@ -349,10 +391,13 @@ namespace PlayWay.Water
 		[SerializeField]
 		public bool allowAlphaBlending;
 
+		[SerializeField]
+		public bool allowHighQualityReflections;
+
 		public void ResetToDefaults()
 		{
 			name = "";
-			maxSpectrumResolution = 1024;
+			maxSpectrumResolution = 256;
 			allowHighPrecisionTextures = true;
 			tileSizeScale = 1.0f;
 			wavesMode = WaterWavesMode.AllowAll;
@@ -363,7 +408,8 @@ namespace PlayWay.Water
 			maxVertexCount = 500000;
 			maxTesselatedVertexCount = 120000;
 			allowAlphaBlending = true;
-		}
+			allowHighQualityReflections = false;
+        }
 	}
 
 	public enum WaterWavesMode

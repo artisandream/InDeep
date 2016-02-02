@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Renders map of depth-based blur sizes for planar reflection effect.
  */
 Shader "PlayWay Water/Utilities/PlanarReflectionBlurMap" {

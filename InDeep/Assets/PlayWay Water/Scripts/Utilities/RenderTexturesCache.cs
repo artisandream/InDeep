@@ -8,7 +8,7 @@ namespace PlayWay.Water
 	/// </summary>
 	public class RenderTexturesCache
 	{
-		static private Dictionary<ulong, RenderTexturesCache> cache = new Dictionary<ulong, RenderTexturesCache>();
+		static private Dictionary<ulong, RenderTexturesCache> cache = new Dictionary<ulong, RenderTexturesCache>(UInt64EqualityComparer.Default);
 
 		private Queue<RenderTexture> renderTextures;
 		private int lastFrameAllUsed;
@@ -16,9 +16,9 @@ namespace PlayWay.Water
 		private ulong hash;
 		private int width, height, depthBuffer;
 		private RenderTextureFormat format;
-		private bool linear, uav;
+		private bool linear, uav, mipMaps;
 
-		public RenderTexturesCache(ulong hash, int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav)
+		public RenderTexturesCache(ulong hash, int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav, bool mipMaps)
 		{
 			this.hash = hash;
 			this.width = width;
@@ -27,10 +27,11 @@ namespace PlayWay.Water
 			this.format = format;
 			this.linear = linear;
 			this.uav = uav;
+			this.mipMaps = mipMaps;
 			this.renderTextures = new Queue<RenderTexture>();
 		}
 
-		static public RenderTexturesCache GetCache(int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav)
+		static public RenderTexturesCache GetCache(int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav, bool mipMaps = false)
 		{
 			RenderTexturesUpdater.EnsureInstance();
 
@@ -38,22 +39,23 @@ namespace PlayWay.Water
 
 			hash |= (uint)width;
 			hash |= ((uint)height << 16);
-			hash |= ((uint)depthBuffer << 29);        // >> 3 << 32
-			hash |= ((linear ? 1UL : 0UL) << 32);
-			hash |= ((uav ? 1UL : 0UL) << 33);
-			hash |= ((ulong)format << 34);
+			hash |= ((ulong)depthBuffer << 29);        // >> 3 << 32
+			hash |= ((linear ? 1UL : 0UL) << 34);
+			hash |= ((uav ? 1UL : 0UL) << 35);
+			hash |= ((mipMaps ? 1UL : 0UL) << 36);
+			hash |= ((ulong)format << 37);
 			
 			RenderTexturesCache renderTexturesCache;
 
 			if(!cache.TryGetValue(hash, out renderTexturesCache))
-				cache[hash] = renderTexturesCache = new RenderTexturesCache(hash, (int)width, (int)height, (int)depthBuffer, format, linear, uav);
+				cache[hash] = renderTexturesCache = new RenderTexturesCache(hash, (int)width, (int)height, (int)depthBuffer, format, linear, uav, mipMaps);
 
 			return renderTexturesCache;
 		}
 
-		static public TemporaryRenderTexture GetTemporary(int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav)
+		static public TemporaryRenderTexture GetTemporary(int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav, bool mipMaps = false)
 		{
-			return GetCache(width, height, depthBuffer, format, linear, uav).GetTemporary();
+			return GetCache(width, height, depthBuffer, format, linear, uav, mipMaps).GetTemporary();
 		}
 
 		public TemporaryRenderTexture GetTemporary()
@@ -73,6 +75,8 @@ namespace PlayWay.Water
 				renderTexture.filterMode = FilterMode.Point;
 				renderTexture.anisoLevel = 1;
 				renderTexture.wrapMode = TextureWrapMode.Repeat;
+				renderTexture.useMipMap = mipMaps;
+				renderTexture.generateMips = mipMaps;
 
 				if(uav)
 					renderTexture.enableRandomWrite = true;
@@ -118,50 +122,13 @@ namespace PlayWay.Water
 				}
 			}
 
-			public RenderTexture GetTemporary(int width, int height, int depthBuffer, RenderTextureFormat format, bool linear, bool uav)
-			{
-				ulong hash = 0;
-
-				hash |= (uint)width;
-				hash |= ((uint)height << 16);
-				hash |= ((uint)depthBuffer << 29);        // >> 3 << 32
-				hash |= ((linear ? 1UL : 0UL) << 32);
-				hash |= ((uav ? 1UL : 0UL) << 33);
-				hash |= ((ulong)format << 34);
-
-				RenderTexturesCache renderTexturesCache;
-
-				if(!cache.TryGetValue(hash, out renderTexturesCache))
-					cache[hash] = renderTexturesCache = new RenderTexturesCache(hash, (int)width, (int)height, (int)depthBuffer, format, linear, uav);
-
-				return renderTexturesCache.GetTemporary();
-			}
-
-			public void ReleaseTemporary(RenderTexture renderTexture)
-			{
-				ulong hash = 0;
-
-				hash |= (uint)renderTexture.width;
-				hash |= ((uint)renderTexture.height << 16);
-				hash |= ((uint)renderTexture.depth << 29);        // >> 3 << 32
-				hash |= ((renderTexture.sRGB ? 0UL : 1UL) << 32);
-				hash |= ((renderTexture.enableRandomWrite ? 1UL : 0UL) << 33);
-				hash |= ((ulong)renderTexture.format << 34);
-
-				RenderTexturesCache renderTexturesCache;
-
-				if(!cache.TryGetValue(hash, out renderTexturesCache))
-					cache[hash] = renderTexturesCache = new RenderTexturesCache(hash, renderTexture.width, renderTexture.height, renderTexture.depth, renderTexture.format, !renderTexture.sRGB, renderTexture.enableRandomWrite);
-
-				renderTexturesCache.ReleaseTemporaryDirect(renderTexture);
-			}
-
 			void Update()
 			{
 				int frame = Time.frameCount;
 
-				foreach(var textures in cache.Values)
-					textures.Update(frame);
+				var enumerator = cache.GetEnumerator();
+				while(enumerator.MoveNext())
+					enumerator.Current.Value.Update(frame);
 			}
 		}
 	}

@@ -9,15 +9,47 @@ namespace PlayWay.WaterEditor
 	{
 		public override void OnInspectorGUI()
 		{
-			var waterVolumesLayerProp = serializedObject.FindProperty("waterVolumesLayer");
-			waterVolumesLayerProp.intValue = EditorGUILayout.LayerField(new GUIContent(waterVolumesLayerProp.displayName, waterVolumesLayerProp.tooltip), waterVolumesLayerProp.intValue);
+			var waterLayerProp = serializedObject.FindProperty("waterLayer");
+			waterLayerProp.intValue = EditorGUILayout.LayerField(new GUIContent(waterLayerProp.displayName, waterLayerProp.tooltip), waterLayerProp.intValue);
 
-			PropertyField("waterMasksEnabled");
+			var waterTempLayerProp = serializedObject.FindProperty("waterTempLayer");
+			waterTempLayerProp.intValue = EditorGUILayout.LayerField(new GUIContent(waterTempLayerProp.displayName, waterTempLayerProp.tooltip), waterTempLayerProp.intValue);
 
-			var waterMasksLayerProp = serializedObject.FindProperty("waterMasksLayer");
-			waterMasksLayerProp.intValue = EditorGUILayout.LayerField(new GUIContent(waterMasksLayerProp.displayName, waterMasksLayerProp.tooltip), waterMasksLayerProp.intValue);
+			PropertyField("physicsThreads");
+			PropertyField("physicsThreadsPriority");
+			PropertyField("allowCpuFFT");
+			PropertyField("allowFloatingPointMipMaps");
+			PropertyField("debugPhysics");
+
+			string defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(BuildTargetGroup.Standalone);
+			bool simd = defines.Contains("WATER_SIMD");
+			bool newSimd = EditorGUILayout.Toggle("Use SIMD Acceleration", simd);
+
+			if(simd != newSimd)
+			{
+				if(newSimd)
+				{
+					EditorUtility.DisplayDialog("DLL", "To make SIMD acceleration work, you will need to copy Mono.Simd.dll from \"(Unity Editor Path)/Unity/Editor/Data/Mono/lib/mono/2.0\" to a Plugins folder in your project.", "OK");
+				}
+
+				SetSimd(newSimd, BuildTargetGroup.Standalone);
+				SetSimd(newSimd, BuildTargetGroup.PS4);
+				SetSimd(newSimd, BuildTargetGroup.XboxOne);
+			}
 
 			serializedObject.ApplyModifiedProperties();
+		}
+
+		private void SetSimd(bool simd, BuildTargetGroup buildTargetGroup)
+		{
+			string defines = PlayerSettings.GetScriptingDefineSymbolsForGroup(buildTargetGroup);
+
+			if(simd)
+				defines += " WATER_SIMD";
+			else
+				defines = defines.Replace(" WATER_SIMD", "").Replace(" WATER_SIMD", "").Replace("WATER_SIMD", "");          // it's an editor script so whatever :)
+
+			PlayerSettings.SetScriptingDefineSymbolsForGroup(buildTargetGroup, defines);
 		}
 
 		[MenuItem("Edit/Project Settings/Water")]

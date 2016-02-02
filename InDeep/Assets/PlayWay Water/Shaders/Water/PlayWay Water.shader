@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Standard"
+Shader "PlayWay Water/Standard"
 {
 	Properties
 	{
@@ -16,10 +16,14 @@
 		_BumpMap("Normal Map", 2D) = "bump" {}
 
 		_DisplacementNormalsIntensity ("Displacement Normals Intensity", Float) = 1.4
-		_GlobalHeightMap ("", 2D) = "black" {}
 		_GlobalNormalMap ("", 2D) = "black" {}
-
+		_GlobalNormalMap1 ("", 2D) = "black" {}
+		_GlobalNormalMap2 ("", 2D) = "black" {}
+		_GlobalNormalMap3 ("", 2D) = "black" {}
 		_GlobalDisplacementMap ("", 2D) = "black" {}
+		_GlobalDisplacementMap1 ("", 2D) = "black" {}
+		_GlobalDisplacementMap2 ("", 2D) = "black" {}
+		_GlobalDisplacementMap3 ("", 2D) = "black" {}
 
 		_DisplacementsScale ("Horizontal Displacement Scale", Float) = 1.0
 
@@ -29,23 +33,26 @@
 		_EmissionColor("Color", Color) = (0,0,0)
 		_EmissionMap("Emission", 2D) = "white" {}
 		
-		_WaterMask("", 2D) = "black" {}
+		_SubtractiveMask("", 2D) = "black" {}
+		_AdditiveMask("", 2D) = "black" {}
 
 		_DetailAlbedoMap("Detail Albedo x2", 2D) = "grey" {}
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		_DetailNormalMap("Normal Map", 2D) = "bump" {}
 
-		_DistantFadeFactors("", Vector) = (0, 0, 0, 0)
+		_DetailFadeFactor("", Float) = 2
 
 		_PlanarReflectionTex ("Planar Reflection", 2D) = "black" {}
 		_PlanarReflectionPack("Planar reflection (distortion, intensity, offset Y, unused)", Vector) = (1.0, 0.45, -0.3, 0.0)
 
+		_LightSmoothnessMul("Light Smoothness Multiplier", Float) = 1.0
 		_WrapSubsurfaceScatteringPack ("Wrap SSS", Vector) = (0.2, 0.833333, 0.5, 0.66666)
-
 		_SpecularFresnelBias ("Specular Fresnel Bias", Float) = 0.02041
 		_RefractionDistortion ("Refraction Distortion", Float) = 0.55
 
-		_WaterTileSize ("Heightmap Tile Size", Float) = 100.0
+		_WaterTileSize ("Heightmap Tile Size", Vector) = (180.0, 18.0, 600.0, 1800.0)
+		_WaterTileOffsets ("Tile Offsets", Vector) = (0.0, 0.0, 0.0, 0.0)
+		_WaterTileSizeScales ("", Vector) = (0.63241, 0.113151, 3.165131, 10.265131)
 
 		_Foam ("Foam (intensity, cutoff)", Vector) = (0.1, 0.375, 0.0, 0.0)
 		_FoamTex ("Foam texture ", 2D) = "black" {}
@@ -55,17 +62,23 @@
 		_FoamSpecularColor("Foam Specular Color", Color) = (1, 1, 1, 1)
 		_EdgeBlendFactorInv ("Edge Blend Factor", Float) = 0.3333
 
-		_FoamMapWS ("", 2D) = "black" {}
+		_FoamMapWS ("", 2D) = "black" {} 
 		_AbsorptionColor ("", Color) = (0.35, 0.04, 0.001, 1.0)
+		_ReflectionColor ("", Color) = (1.0, 1.0, 1.0, 1.0)
 		_LocalDisplacementMap("", 2D) = "black" {}
 		_LocalNormalMap("", 2D) = "black" {}
+		_DisplacedHeightMaps("", 2D) = "black" {}
 
 		_SubsurfaceScatteringPack("Subsurface Scattering", Vector) = (1.0, 0.15, 1.65, 0)
+		//_LocalMapsCoords("", Vector) = (0.0, 1.0, 0.0, 1.0)
 
 		_SlopeVariance("", 3D) = "black" {}
 
 		_TesselationFactor ("Tesselation Factor", Float) = 14
 		_MaxDisplacement ("", Float) = 10
+		_SurfaceOffset ("", Vector) = (0.0, 0.0, 0.0, 0.0)
+
+		_WaterId ("", Vector) = (128, 256, 0, 0)
 
 		// -- gerstner
 		_GerstnerOrigin("", Vector) = (0, 0, 0, 0)
@@ -102,10 +115,10 @@
 		// --
 
 		// Blending state
+		[HideInInspector] _Cull ("_Cull", Float) = 2
 		[HideInInspector] _Mode ("__mode", Float) = 0.0
 		[HideInInspector] _SrcBlend ("__src", Float) = 1.0
 		[HideInInspector] _DstBlend ("__dst", Float) = 0.0
-		//[HideInInspector] _ZWrite ("__zw", Float) = 1.0
 	}
 
 	CGINCLUDE
@@ -118,45 +131,34 @@
 	//
 	SubShader
 	{
-		Tags { "RenderType"="Opaque" "PerformanceChecks"="False" "Queue"="Transparent-1" "CustomType"="Water" }
+		Tags { "RenderType" = "Opaque" "PerformanceChecks" = "False" "Queue" = "Transparent-1" "CustomType" = "Water" }
 		LOD 300
-		
+
 		GrabPass { "_RefractionTex" }
 
 		// ------------------------------------------------------------------
 		//  Base forward pass (directional light, emission, lightmaps, ...)
 		Pass
 		{
-			Name "FORWARD" 
+			Name "FORWARD"
 			Tags { "LightMode" = "ForwardBase" }
-			
-			Blend [_SrcBlend] [_DstBlend]
+
+			Blend [_SrcBlend][_DstBlend]
 			ZWrite On
-			Cull Back
-			ZTest LEqual
+			Cull [_Cull]
+			ZTest Less
 
 			CGPROGRAM
 			#pragma target 5.0
 			#pragma only_renderers d3d11
-			
-			#pragma shader_feature _NORMALMAP
-			#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _EMISSION
-			#pragma shader_feature _PLANAR_REFLECTIONS
-			#pragma shader_feature _CUBEMAP_REFLECTIONS
-			#pragma shader_feature _WATER_FOAM_WS
-			#pragma shader_feature _WATER_REFRACTION
-			#pragma shader_feature _FFT_WAVES_SLOPE
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _INCLUDE_SLOPE_VARIANCE
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _VOLUMETRIC_LIGHTING
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _QUADS
+
+			#define PLACE_KEYWORDS_HERE
+			#pragma multi_compile _WATER_FRONT _WATER_BACK
 
 			#pragma multi_compile_fwdbase
 			#pragma multi_compile_fog
+
+			#pragma skip_variants LIGHTMAP_ON DYNAMICLIGHTMAP_ON DIRLIGHTMAP_COMBINED DIRLIGHTMAP_SEPARATE SHADOWS_SCREEN SHADOWS_NATIVE SHADOWS_NONATIVE SHADOWS_CUBE SHADOWS_DEPTH SHADOWS_SOFT
 			
 			#if UNITY_CAN_COMPILE_TESSELLATION
 				#pragma vertex tessvert_surf
@@ -183,28 +185,18 @@
 			Blend [_SrcBlend] One
 			Fog { Color (0,0,0,0) } // in additive pass fog should be black
 			ZWrite Off
+			Cull [_Cull]
 			ZTest LEqual
 
 			CGPROGRAM
 			#pragma target 5.0
 			#pragma only_renderers d3d11
 			
-			#pragma shader_feature _NORMALMAP
-			#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES_SLOPE
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _INCLUDE_SLOPE_VARIANCE
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _VOLUMETRIC_LIGHTING
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _QUADS
+			#define PLACE_KEYWORDS_HERE
+			#pragma multi_compile _WATER_FRONT _WATER_BACK
 			
-			#pragma multi_compile_fwdadd_fullshadows
+			#pragma multi_compile_fwdadd
 			#pragma multi_compile_fog
-			
-			//#pragma vertex vertForwardAdd
-			//#pragma fragment fragForwardAdd
 
 			#if UNITY_CAN_COMPILE_TESSELLATION
 				#pragma vertex tessvert_surf
@@ -229,17 +221,13 @@
 			Tags { "LightMode" = "ShadowCaster" }
 			
 			ZWrite On ZTest LEqual
+			Cull Off
 
 			CGPROGRAM
 			#pragma target 5.0
 			#pragma only_renderers d3d11
 
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _QUADS
+			#define PLACE_KEYWORDS_HERE
 			#pragma multi_compile_shadowcaster
 
 			#if UNITY_CAN_COMPILE_TESSELLATION
@@ -267,18 +255,13 @@
 			
 			ZWrite On
 			ZTest LEqual
-			Cull Back
+			Cull Off
 
 			CGPROGRAM
 			#pragma target 5.0
 			#pragma only_renderers d3d11
 
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _QUADS
+			#define PLACE_KEYWORDS_HERE
 			#define SHADOWS_DEPTH 1
 
 			#if UNITY_CAN_COMPILE_TESSELLATION
@@ -307,7 +290,7 @@
 		//	Name "META" 
 		//	Tags { "LightMode"="Meta" }
 
-		//	Cull Back
+		//	Cull [_Cull]
 
 		//	CGPROGRAM
 		//	#pragma vertex vert_meta
@@ -325,7 +308,7 @@
 	//
 	SubShader
 	{
-		Tags { "RenderType"="Opaque" "PerformanceChecks"="False" "Queue"="Transparent" "CustomType"="Water" }
+		Tags { "RenderType"="Opaque" "PerformanceChecks"="False" "Queue"="Transparent-1" "CustomType"="Water" }
 		LOD 300
 		
 		GrabPass { "_RefractionTex" }
@@ -339,8 +322,8 @@
 
 			Blend [_SrcBlend] [_DstBlend]
 			ZWrite On
-			Cull Back
-			ZTest LEqual
+			Cull [_Cull]
+			ZTest Less
 
 			CGPROGRAM
 			#pragma target 3.0
@@ -349,24 +332,14 @@
 			
 			// -------------------------------------
 					
-			#pragma shader_feature _NORMALMAP
-			#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			//#pragma shader_feature _EMISSION
-			#pragma shader_feature _PLANAR_REFLECTIONS
-			#pragma shader_feature _CUBEMAP_REFLECTIONS
-			#pragma shader_feature _WATER_FOAM_WS
-			#pragma shader_feature _WATER_REFRACTION
-			#pragma shader_feature _FFT_WAVES_SLOPE
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			//#pragma shader_feature _INCLUDE_SLOPE_VARIANCE
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _VOLUMETRIC_LIGHTING
-
+			#define PLACE_KEYWORDS_HERE
+			#pragma multi_compile _WATER_FRONT _WATER_BACK
+			
 			#pragma multi_compile_fwdbase
 			#pragma multi_compile_fog
 			
+			#pragma skip_variants LIGHTMAP_ON DYNAMICLIGHTMAP_ON DIRLIGHTMAP_COMBINED DIRLIGHTMAP_SEPARATE SHADOWS_SCREEN SHADOWS_NATIVE SHADOWS_NONATIVE SHADOWS_CUBE SHADOWS_DEPTH SHADOWS_SOFT
+
 			#pragma vertex vertForwardBase
 			#pragma fragment fragForwardBase
 
@@ -384,6 +357,7 @@
 			Blend [_SrcBlend] One
 			Fog { Color (0,0,0,0) } // in additive pass fog should be black
 			ZWrite Off
+			Cull [_Cull]
 			ZTest LEqual
 
 			CGPROGRAM
@@ -394,17 +368,10 @@
 			// -------------------------------------
 
 			
-			#pragma shader_feature _NORMALMAP
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES_SLOPE
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _INCLUDE_SLOPE_VARIANCE
-			#pragma shader_feature _PROJECTION_GRID
-			#pragma shader_feature _VOLUMETRIC_LIGHTING
+			#define PLACE_KEYWORDS_HERE
+			#pragma multi_compile _WATER_FRONT _WATER_BACK
 			
-			#pragma multi_compile_fwdadd_fullshadows
+			#pragma multi_compile_fwdadd
 			#pragma multi_compile_fog
 			
 			#pragma vertex vertForwardAdd
@@ -421,7 +388,7 @@
 			Tags { "LightMode" = "ShadowCaster" }
 			
 			ZWrite On ZTest LEqual
-			Cull Back
+			Cull Off
 
 			CGPROGRAM
 			#pragma target 3.0
@@ -431,12 +398,7 @@
 			// -------------------------------------
 
 
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _PROJECTION_GRID
-
+			#define PLACE_KEYWORDS_HERE
 			#pragma multi_compile_shadowcaster
 
 			#pragma vertex vertShadowCaster
@@ -449,22 +411,18 @@
 
 			// ------------------------------------------------------------------
 			//  Depth rendering pass
-			Pass{
+		Pass{
 			Name "Depth"
 			Tags{ "LightMode" = "VertexLMRGBM" }
 
 			ZWrite On
 			ZTest LEqual
-			Cull Back
+			Cull Off
 
 			CGPROGRAM
 			#pragma target 3.0
 
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _FFT_WAVES
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _WATER_OVERLAYS
-			#pragma shader_feature _PROJECTION_GRID
+			#define PLACE_KEYWORDS_HERE
 			#define SHADOWS_DEPTH 1
 
 			#pragma vertex vertDepth
@@ -485,7 +443,7 @@
 		//	Name "META" 
 		//	Tags { "LightMode"="Meta" }
 
-		//	Cull Back
+		//	Cull [_Cull]
 
 		//	CGPROGRAM
 		//	#pragma vertex vert_meta
@@ -507,8 +465,6 @@
 	{
 		Tags { "RenderType"="Opaque" "PerformanceChecks"="False" "Queue"="Geometry" "CustomType"="Water" }
 		LOD 50
-
-		GrabPass{ "_RefractionTex" }
 		
 		// ------------------------------------------------------------------
 		//  Base forward pass (directional light, emission, lightmaps, ...)
@@ -519,65 +475,30 @@
 
 			Blend [_SrcBlend] [_DstBlend]
 			ZWrite On
-			Cull Back
-			ZTest LEqual
+			Cull [_Cull]
+			ZTest Less
 
 			CGPROGRAM
 			#pragma target 2.0
-			
-			#pragma shader_feature _NORMALMAP
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _PLANAR_REFLECTIONS
-			//#pragma shader_feature _CUBEMAP_REFLECTIONS
-			//#pragma shader_feature _WATER_FOAM_WS
-			//#pragma shader_feature _WATER_REFRACTION
-			#pragma shader_feature _FFT_WAVES_SLOPE
-			#pragma shader_feature _GERSTNER_WAVES
-			#pragma shader_feature _PROJECTION_GRID
 
-			#pragma skip_variants SHADOWS_SOFT DYNAMICLIGHTMAP_ON DIRLIGHTMAP_COMBINED DIRLIGHTMAP_SEPARATE SHADOWS_SCREEN SHADOWS_NATIVE SHADOWS_NONATIVE SHADOWS_CUBE
+			#pragma exclude_renderers d3d11
+			
+			#define PLACE_KEYWORDS_HERE
+			#pragma multi_compile _WATER_FRONT _WATER_BACK
 			
 			#pragma multi_compile_fwdbase
 			#pragma multi_compile_fog
+
+			#pragma skip_variants LIGHTMAP_ON DYNAMICLIGHTMAP_ON DIRLIGHTMAP_COMBINED DIRLIGHTMAP_SEPARATE SHADOWS_SCREEN SHADOWS_NATIVE SHADOWS_NONATIVE SHADOWS_CUBE SHADOWS_DEPTH SHADOWS_SOFT
 	
 			#pragma vertex vertForwardBase
 			#pragma fragment fragForwardBase
 
 			#include "UnityStandardCore.cginc"
 			
-
 			ENDCG
 		}
-		// ------------------------------------------------------------------
-		//  Additive forward pass (one light per pass)
-		//Pass
-		//{
-		//	Name "FORWARD_DELTA"
-		//	Tags { "LightMode" = "ForwardAdd" }
-		//	Blend [_SrcBlend] One
-		//	Fog { Color (0,0,0,0) } // in additive pass fog should be black
-		//	ZWrite Off
-		//	ZTest LEqual
 
-		//	CGPROGRAM
-		//	#pragma target 2.0
-
-		//	
-		//	#pragma shader_feature _NORMALMAP
-		//	//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-		//	#pragma multi_compile __ _FFT_WAVES_SLOPE
-		//	#pragma shader_feature _GERSTNER_WAVES
-		//	
-		//	//#pragma multi_compile_fwdadd_fullshadows
-		//	#pragma multi_compile_fog
-		//	
-		//	#pragma vertex vertForwardAdd
-		//	#pragma fragment fragForwardAdd
-
-		//	#include "UnityStandardCore.cginc"
-
-		//	ENDCG
-		//}
 		// ------------------------------------------------------------------
 		//  Shadow rendering pass
 		Pass {
@@ -585,12 +506,14 @@
 			Tags { "LightMode" = "ShadowCaster" }
 			
 			ZWrite On ZTest LEqual
+			Cull Off
 
 			CGPROGRAM
 			#pragma target 2.0
 			
-			//#pragma shader_feature _ _ALPHABLEND_ON _ALPHAPREMULTIPLY_ON
-			#pragma shader_feature _GERSTNER_WAVES
+			#pragma exclude_renderers d3d11
+			
+			#define PLACE_KEYWORDS_HERE
 			#pragma multi_compile_shadowcaster
 
 			#pragma vertex vertShadowCaster

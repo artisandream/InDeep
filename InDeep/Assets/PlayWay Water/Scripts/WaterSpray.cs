@@ -3,8 +3,8 @@
 namespace PlayWay.Water
 {
 	[RequireComponent(typeof(Water))]
-	[RequireComponent(typeof(WaterWavesFFT))]
-	[AddComponentMenu("Water/Spray")]
+	[RequireComponent(typeof(WindWaves))]
+	[AddComponentMenu("Water/Spray", 1)]
 	public class WaterSpray : MonoBehaviour
 	{
 		[HideInInspector]
@@ -18,20 +18,16 @@ namespace PlayWay.Water
 		[SerializeField]
 		private Material sprayMaterial;
 
-		[Range(16, 65535)]
+		[Range(16, 327675)]
 		[SerializeField]
 		private int maxParticles = 65535;
 		
-		[Range(0.0f, 4.0f)]
-		[SerializeField]
-		private float spawnBoost = 1.0f;
-
-		[Range(0.0f, 0.999f)]
-		[SerializeField]
-		private float spawnSkipRatio = 0.975f;
+		private float spawnThreshold = 1.0f;
+		private float spawnSkipRatio = 0.9f;
+		private float scale = 1.0f;
 		
 		private Water water;
-		private WaterWavesFFT wavesSimulation;
+		private WindWaves windWaves;
 		private Material sprayGeneratorMaterial;
 		private Transform probeAnchor;
 
@@ -45,14 +41,14 @@ namespace PlayWay.Water
 		private bool resourcesReady;
 		private int[] countBuffer = new int[4];
 		private float finalSpawnSkipRatio;
-		private Vector2 paramsPrecomp;
+		private float skipRatioPrecomp;
+		private MaterialPropertyBlock[] propertyBlocks;
 
 		void Start()
 		{
 			water = GetComponent<Water>();
-			wavesSimulation = GetComponent<WaterWavesFFT>();
-
-			water.SpectraRenderer.ResolutionChanged += OnResolutionChanged;
+			windWaves = GetComponent<WindWaves>();
+			windWaves.ResolutionChanged.AddListener(OnResolutionChanged);
 			
 			supported = CheckSupport();
 
@@ -63,13 +59,23 @@ namespace PlayWay.Water
 			}
 		}
 
-		public int CurrentParticleCount
+		public int MaxParticles
+		{
+			get { return maxParticles; }
+		}
+
+		public int SpawnedParticles
 		{
 			get
 			{
-				ComputeBuffer.CopyCount(particlesA, particlesBInfo, 0);
-				particlesBInfo.GetData(countBuffer);
-				return countBuffer[0];
+				if(particlesA != null)
+				{
+					ComputeBuffer.CopyCount(particlesA, particlesBInfo, 0);
+					particlesBInfo.GetData(countBuffer);
+					return countBuffer[0];
+				}
+				else
+					return 0;
 			}
 		}
 		
@@ -95,29 +101,35 @@ namespace PlayWay.Water
 				blankOutput.Create();
 			}
 
-			if(probeAnchor == null)
-			{
-				var probeAnchorGo = new GameObject("Spray Probe Anchor");
-				probeAnchorGo.hideFlags = HideFlags.HideAndDontSave;
-				probeAnchor = probeAnchorGo.transform;
-			}
-
 			if(mesh == null)
 			{
+				int vertexCount = Mathf.Min(maxParticles, 65535);
+
 				mesh = new Mesh();
 				mesh.name = "Spray";
 				mesh.hideFlags = HideFlags.DontSave;
-				mesh.vertices = new Vector3[maxParticles];
+				mesh.vertices = new Vector3[vertexCount];
 
-				int[] indices = new int[maxParticles];
+				int[] indices = new int[vertexCount];
 
-				for(int i = 0; i < maxParticles; ++i)
+				for(int i = 0; i < vertexCount; ++i)
 					indices[i] = i;
-
-				float size = water.TileSize * 1.6f;
-
+				
 				mesh.SetIndices(indices, MeshTopology.Points, 0);
-				mesh.bounds = new Bounds(Vector3.zero, new Vector3(size, size, size));
+				mesh.bounds = new Bounds(Vector3.zero, new Vector3(10000000.0f, 10000000.0f, 10000000.0f));
+			}
+
+			if(propertyBlocks == null)
+			{
+				int numMeshes = Mathf.CeilToInt(maxParticles / 65535.0f);
+
+				propertyBlocks = new MaterialPropertyBlock[numMeshes];
+
+				for(int i=0; i<numMeshes; ++i)
+				{
+					var block = propertyBlocks[i] = new MaterialPropertyBlock();
+					block.SetFloat("_ParticleOffset", i * 65535);
+				}
 			}
 
 			if(particlesA == null)
@@ -172,11 +184,21 @@ namespace PlayWay.Water
 				mesh = null;
 			}
 
+			if(probeAnchor != null)
+			{
+				Destroy(probeAnchor.gameObject);
+				probeAnchor = null;
+            }
+
 			resourcesReady = false;
 		}
 
 		void OnEnable()
 		{
+			water = GetComponent<Water>();
+			water.ProfilesChanged.AddListener(OnProfilesChanged);
+			OnProfilesChanged(water);
+
 			Camera.onPreCull -= OnSomeCameraPreCull;
 			Camera.onPreCull += OnSomeCameraPreCull;
 		}
@@ -233,66 +255,65 @@ namespace PlayWay.Water
 			SwapParticleBuffers();
 			ClearParticles();
 			UpdateParticles();
-			RenderJacobian();
+
+			if(Camera.main != null)
+				SpawnParticles(Camera.main.transform);
 		}
 
 		void OnSomeCameraPreCull(Camera camera)
 		{
-			if(!resourcesReady) return;
+			if(!resourcesReady)
+				return;
 
-			if(camera.GetComponent<WaterCamera>() != null)
+			var waterCamera = WaterCamera.GetWaterCamera(camera);
+
+			if(waterCamera != null)
 			{
-				float tileSize = water.TileSize;
-
-				sprayMaterial.SetFloat("_TileSize", tileSize);
 				sprayMaterial.SetBuffer("_Particles", particlesA);
 				sprayMaterial.SetVector("_CameraUp", camera.transform.up);
+				sprayMaterial.SetFloat("_SpecularFresnelBias", water.WaterMaterial.GetFloat("_SpecularFresnelBias"));
+				sprayMaterial.SetVector("_WrapSubsurfaceScatteringPack", water.WaterMaterial.GetVector("_WrapSubsurfaceScatteringPack"));
+				sprayMaterial.SetTexture("_SubtractiveMask", waterCamera.SubtractiveMask);
 
-				Vector3 pos = camera.transform.position;
-				pos.x = (Mathf.Round(pos.x / tileSize) - 1) * tileSize;
-				pos.y = 0.0f;
-				pos.z = (Mathf.Round(pos.z / tileSize) - 1) * tileSize;
+				if(probeAnchor == null)
+				{
+					var probeAnchorGo = new GameObject("Spray Probe Anchor");
+					probeAnchorGo.hideFlags = HideFlags.HideAndDontSave;
+					probeAnchor = probeAnchorGo.transform;
+				}
 
-				Matrix4x4 matrix = Matrix4x4.identity;
-				matrix.m03 = pos.x;
-				matrix.m23 = pos.z;
+				probeAnchor.position = camera.transform.position;
 
-				probeAnchor.position = pos;
+				int numMeshes = propertyBlocks.Length;
 
-				Graphics.DrawMesh(mesh, matrix, sprayMaterial, 0, camera, 0, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, probeAnchor);
-
-				matrix.m03 += tileSize;
-				Graphics.DrawMesh(mesh, matrix, sprayMaterial, 0, camera, 0, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, probeAnchor);
-
-				matrix.m23 += tileSize;
-				Graphics.DrawMesh(mesh, matrix, sprayMaterial, 0, camera, 0, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, probeAnchor);
-
-				matrix.m03 -= tileSize;
-				Graphics.DrawMesh(mesh, matrix, sprayMaterial, 0, camera, 0, null, UnityEngine.Rendering.ShadowCastingMode.Off, false, probeAnchor);
+				for(int i = 0; i < numMeshes; ++i)
+                    Graphics.DrawMesh(mesh, Matrix4x4.identity, sprayMaterial, 0, camera, 0, propertyBlocks[i], UnityEngine.Rendering.ShadowCastingMode.Off, false, probeAnchor);
 			}
 		}
-
-		private void RenderJacobian()
+		
+		private void SpawnParticles(Transform origin)
 		{
-			sprayGeneratorMaterial.SetTexture("_HeightMap", wavesSimulation.HeightMap);
-			sprayGeneratorMaterial.SetVector("_Params", new Vector4(paramsPrecomp.x * water.HorizontalDisplacementScale / water.TileSize, paramsPrecomp.y, water.HorizontalDisplacementScale / water.TileSize, 0.0f));
+			Vector3 originPosition = origin.position;
+			float pixelSize = 400.0f / blankOutput.width;
+			
+			sprayGeneratorMaterial.CopyPropertiesFromMaterial(water.WaterMaterial);
+			sprayGeneratorMaterial.SetVector("_SurfaceOffset", -water.SurfaceOffset);
+            sprayGeneratorMaterial.SetVector("_Params", new Vector4(spawnThreshold * 0.25835f, skipRatioPrecomp, 0.0f, scale * 0.455f));
+			sprayGeneratorMaterial.SetVector("_Coordinates", new Vector4(originPosition.x - 200.0f + Random.value * pixelSize, originPosition.z - 200.0f + Random.value * pixelSize, 400.0f, 400.0f));
 			Graphics.SetRandomWriteTarget(1, particlesA);
-			Graphics.Blit(wavesSimulation.DisplacementMap, blankOutput, sprayGeneratorMaterial, 0);
+			Graphics.Blit(null, blankOutput, sprayGeneratorMaterial, 0);
 			Graphics.ClearRandomWriteTargets();
         }
 
 		private void UpdateParticles()
 		{
-			Vector2 windSpeed = water.WindSpeed * 0.0008f;
+			Vector2 windSpeed = windWaves.WindSpeed * 0.0008f;
 			Vector3 gravity = Physics.gravity;
 			float deltaTime = Time.deltaTime;
 			
             sprayControllerShader.SetFloat("deltaTime", deltaTime);
 			sprayControllerShader.SetVector("externalForces", new Vector3((windSpeed.x + gravity.x) * deltaTime, gravity.y * deltaTime, (windSpeed.y + gravity.z) * deltaTime));
-			//sprayControllerShader.SetTexture(0, "FoamMap", GetComponent<WaterMapEffects>().FoamMap);
-			//sprayControllerShader.SetTexture(0, "DisplacementMap", GetComponent<WaterWavesFFT>().DistortionMap);
 			sprayControllerShader.SetBuffer(0, "SourceParticles", particlesB);
-			//sprayControllerShader.SetBuffer(0, "SourceParticlesInfo", particlesBInfo); 
 			sprayControllerShader.SetBuffer(0, "TargetParticles", particlesA);
 			sprayControllerShader.Dispatch(0, maxParticles / 128, 1, 1);
 		}
@@ -310,7 +331,7 @@ namespace PlayWay.Water
 			particlesA = t;
 		}
 
-		private void OnResolutionChanged()
+		private void OnResolutionChanged(WindWaves windWaves)
 		{
 			if(blankOutput != null)
 			{
@@ -321,13 +342,34 @@ namespace PlayWay.Water
 			resourcesReady = false;
         }
 
+		private void OnProfilesChanged(Water water)
+		{
+			var profiles = water.Profiles;
+
+			spawnThreshold = 0.0f;
+			spawnSkipRatio = 0.0f;
+			scale = 0.0f;
+
+			if(profiles != null)
+			{
+				foreach(var weightedProfile in profiles)
+				{
+					var profile = weightedProfile.profile;
+					float weight = weightedProfile.weight;
+
+					spawnThreshold += profile.SprayThreshold * weight;
+					spawnSkipRatio += profile.SpraySkipRatio * weight;
+					scale += profile.SpraySize * weight;
+				}
+			}
+		}
+
 		private void UpdatePrecomputedParams()
 		{
 			if(water != null)
-				resolution = water.SpectraRenderer.FinalResolution;
-
-			paramsPrecomp.x = spawnBoost * resolution / 2048.0f * 220.0f * 6.5f;
-			paramsPrecomp.y = Mathf.Pow(spawnSkipRatio, 1024.0f / resolution);
+				resolution = windWaves.FinalResolution;
+			
+			skipRatioPrecomp = Mathf.Pow(spawnSkipRatio, 1024.0f / resolution);
         }
 	}
 }

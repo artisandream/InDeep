@@ -3,35 +3,20 @@
 namespace PlayWay.Water
 {
 	/// <summary>
-	/// Extends water volume. Added automatically to all water child colliders. No need to use it manually, ever.
+	/// Extends water volume.
 	/// </summary>
-	public class WaterVolumeAdd : MonoBehaviour
+	public class WaterVolumeAdd : WaterVolumeBase
 	{
-		[SerializeField]
-		private Water water;
-
-		private Collider[] colliders;
-
-		void Awake()
+		override protected void Register(Water water)
 		{
-			water = GetComponentInParent<Water>();
-			colliders = GetComponents<Collider>();
+			if(water != null)
+				water.Volume.AddVolume(this);
 		}
 
-		public Water Water
+		override protected void Unregister(Water water)
 		{
-			get { return water; }
-		}
-
-		public bool IsPointInside(Vector3 point)
-		{
-			foreach(var collider in colliders)
-			{
-				if(collider.IsPointInside(point))
-					return true;
-			}
-
-			return false;
+			if(water != null)
+				water.Volume.RemoveVolume(this);
 		}
 	}
 }

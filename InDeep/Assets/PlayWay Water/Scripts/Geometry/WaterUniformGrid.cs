@@ -6,7 +6,7 @@ namespace PlayWay.Water
 	[System.Serializable]
 	public class WaterUniformGrid : WaterPrimitiveBase
 	{
-		override protected Mesh[] CreateMeshes(int vertexCount)
+		override protected Mesh[] CreateMeshes(int vertexCount, bool volume)
 		{
 			int dim = Mathf.RoundToInt(Mathf.Sqrt(vertexCount));
 			List<Mesh> meshes = new List<Mesh>();
@@ -23,7 +23,10 @@ namespace PlayWay.Water
 				{
 					float fx = (float)x / (dim - 1) * 2.0f - 1.0f;
 
-					vertices.Add(new Vector3(fx, 0.0f, fy));
+					if(volume && (x == 0 || y == 0 || x == dim - 1 || y == dim - 1))
+						vertices.Add(new Vector3(0.0f, -0.2f, 0.0f));
+					else
+						vertices.Add(new Vector3(fx, 0.0f, fy));
 
 					if(x != 0 && y != 0 && vertexIndex > dim)
 					{
@@ -31,11 +34,6 @@ namespace PlayWay.Water
 						indices.Add(vertexIndex - dim);
 						indices.Add(vertexIndex - dim - 1);
 						indices.Add(vertexIndex - 1);
-
-						indices.Add(vertexIndex - 1);
-						indices.Add(vertexIndex - dim - 1);
-						indices.Add(vertexIndex - dim);
-						indices.Add(vertexIndex);
 					}
 
 					++vertexIndex;
@@ -70,8 +68,8 @@ namespace PlayWay.Water
 		protected override Matrix4x4 GetMatrix(Camera camera)
 		{
 			Vector3 position = camera.transform.position;
-			Vector3 scale = camera.orthographic ? new Vector3(camera.orthographicSize + water.SpectraRenderer.MaxDisplacement, 1.0f, camera.orthographicSize + water.SpectraRenderer.MaxDisplacement) : new Vector3(camera.farClipPlane * Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad), 1.0f, camera.farClipPlane);
-			return Matrix4x4.TRS(new Vector3(position.x, water.transform.position.y, position.z), Quaternion.identity, scale);
+			Vector3 scale = camera.orthographic ? new Vector3(camera.orthographicSize + water.MaxHorizontalDisplacement, camera.orthographicSize + water.MaxHorizontalDisplacement, camera.orthographicSize + water.MaxHorizontalDisplacement) : new Vector3(camera.farClipPlane * Mathf.Tan(camera.fieldOfView * Mathf.Deg2Rad), camera.farClipPlane, camera.farClipPlane);
+			return Matrix4x4.TRS(new Vector3(position.x, water.transform.position.y, position.z), camera.orthographic ? Quaternion.identity : Quaternion.AngleAxis(camera.transform.eulerAngles.y, Vector3.up), scale);
 		}
 	}
 }

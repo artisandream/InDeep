@@ -75,7 +75,7 @@ struct SurfaceOutputStandard
 	fixed Alpha;		// alpha for transparencies
 };
 
-inline half4 LightingStandard (SurfaceOutputStandard s, half3 viewDir, UnityGI gi)
+inline half4 LightingStandardWater (SurfaceOutputStandard s, half3 viewDir, UnityGI gi)
 {
 	s.Normal = normalize(s.Normal);
 
@@ -88,7 +88,7 @@ inline half4 LightingStandard (SurfaceOutputStandard s, half3 viewDir, UnityGI g
 	half outputAlpha;
 	s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
 
-	half4 c = UNITY_BRDF_PBS (s.Albedo, specColor, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect);
+	half4 c = UNITY_BRDF_PBS (s.Albedo, specColor, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect, 1);
 	c.rgb += UNITY_BRDF_GI (s.Albedo, specColor, oneMinusReflectivity, s.Smoothness, s.Normal, viewDir, s.Occlusion, gi);
 	c.a = outputAlpha;
 	return c;
@@ -132,7 +132,7 @@ struct SurfaceOutputStandardSpecular
 	fixed Alpha;		// alpha for transparencies
 };
 
-inline half4 LightingStandardSpecular (SurfaceOutputStandardSpecular s, half3 viewDir, UnityGI gi)
+inline half4 LightingStandardWaterSpecular (SurfaceOutputStandardSpecular s, half3 viewDir, UnityGI gi)
 {
 	s.Normal = normalize(s.Normal);
 
@@ -145,19 +145,19 @@ inline half4 LightingStandardSpecular (SurfaceOutputStandardSpecular s, half3 vi
 	half outputAlpha;
 	s.Albedo = PreMultiplyAlpha (s.Albedo, s.Alpha, oneMinusReflectivity, /*out*/ outputAlpha);
 
-	half4 c = UNITY_BRDF_PBS (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect);
+	half4 c = UNITY_BRDF_PBS (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect, 1);
 	c.rgb += UNITY_BRDF_GI (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, viewDir, s.Occlusion, gi);
 	c.a = outputAlpha;
 	return c;
 }
 
-inline half4 LightingStandardSpecular_Deferred (SurfaceOutputStandardSpecular s, half3 viewDir, UnityGI gi, out half4 outDiffuseOcclusion, out half4 outSpecSmoothness, out half4 outNormal)
+inline half4 LightingStandardWaterSpecular_Deferred (SurfaceOutputStandardSpecular s, half3 viewDir, UnityGI gi, out half4 outDiffuseOcclusion, out half4 outSpecSmoothness, out half4 outNormal)
 {
 	// energy conservation
 	half oneMinusReflectivity;
 	s.Albedo = EnergyConservationBetweenDiffuseAndSpecular (s.Albedo, s.Specular, /*out*/ oneMinusReflectivity);
 
-	half4 c = UNITY_BRDF_PBS (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect);
+	half4 c = UNITY_BRDF_PBS (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, 1.0, s.Normal, viewDir, /*fix this*/0, gi.light, gi.indirect, 1);
 	c.rgb += UNITY_BRDF_GI (s.Albedo, s.Specular, oneMinusReflectivity, s.Smoothness, s.Normal, viewDir, s.Occlusion, gi);
 
 	outDiffuseOcclusion = half4(s.Albedo, s.Occlusion);

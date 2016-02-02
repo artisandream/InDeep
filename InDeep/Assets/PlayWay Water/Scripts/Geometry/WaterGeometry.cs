@@ -1,5 +1,5 @@
-﻿using UnityEngine;
-using System.Linq;
+﻿using System.Collections.Generic;
+using UnityEngine;
 
 namespace PlayWay.Water
 {
@@ -15,11 +15,11 @@ namespace PlayWay.Water
 
 		[Tooltip("Water geometry vertex count at 1920x1080.")]
 		[SerializeField]
-		private int baseVertexCount = 118000;
+		private int baseVertexCount = 500000;
 
 		[Tooltip("Water geometry vertex count at 1920x1080 on systems with tesselation support. Set it a bit lower as tesselation will place additional, better distributed vertices in shader.")]
 		[SerializeField]
-		private int tesselatedBaseVertexCount = 12400;
+		private int tesselatedBaseVertexCount = 16000;
 
 		[SerializeField]
 		private bool adaptToResolution = true;
@@ -36,24 +36,34 @@ namespace PlayWay.Water
 		private WaterUniformGrid uniformGrid;
 
 		[SerializeField]
-		private Mesh[] customMeshes;
+		private WaterCustomSurfaceMeshes customSurfaceMeshes;
 
-		private Water water;
-		private Mesh[] customMeshesFiltered;
+		[System.Obsolete]
+		[SerializeField]
+		private Mesh[] customMeshes;
+		
 		private Type previousType;
 		private int previousTargetVertexCount;
 		private int thisSystemVertexCount;
+		private int frameCount;
 
 		internal void OnEnable(Water water)
 		{
-			this.water = water;
+#pragma warning disable 0612 // Type or member is obsolete
+			if(customMeshes != null && customMeshes.Length != 0)
+			{
+				customSurfaceMeshes.Meshes = customMeshes;
+				customMeshes = null;
+			}
+#pragma warning restore 0612 // Type or member is obsolete
 
-			FilterCustomMeshes();
+			OnValidate(water);
 			UpdateVertexCount();
 
-			if(radialGrid != null) radialGrid.OnEnable(water);
-			if(projectionGrid != null) projectionGrid.OnEnable(water);
-			if(uniformGrid != null) uniformGrid.OnEnable(water);
+			radialGrid.OnEnable(water);
+			projectionGrid.OnEnable(water);
+			uniformGrid.OnEnable(water);
+			customSurfaceMeshes.OnEnable(water);
 		}
 
 		internal void OnDisable()
@@ -61,6 +71,7 @@ namespace PlayWay.Water
 			if(radialGrid != null) radialGrid.OnDisable();
 			if(projectionGrid != null) projectionGrid.OnDisable();
 			if(uniformGrid != null) uniformGrid.OnDisable();
+			if(customSurfaceMeshes != null) customSurfaceMeshes.OnDisable();
 		}
 
 		public Type GeometryType
@@ -73,6 +84,11 @@ namespace PlayWay.Water
 			get { return baseVertexCount; }
 		}
 
+		public int TesselatedBaseVertexCount
+		{
+			get { return tesselatedBaseVertexCount; }
+		}
+
 		public bool AdaptToResolution
 		{
 			get { return adaptToResolution; }
@@ -83,26 +99,27 @@ namespace PlayWay.Water
 			get
 			{
 				if(type == Type.CustomMeshes)
-				{
-					if(customMeshesFiltered != null && customMeshesFiltered.Length != 0 && customMeshesFiltered[0].subMeshCount != 0)
-						return customMeshesFiltered[0].GetTopology(0) == MeshTopology.Triangles;
-					else
-						return true;
-				}
+					return customSurfaceMeshes.Triangular;
 				else
 					return false;
 			}
 		}
 
-		public Mesh[] GetCustomMeshesDirect()
+		public WaterCustomSurfaceMeshes CustomSurfaceMeshes
 		{
-			return customMeshes;
+			get { return customSurfaceMeshes; }
 		}
 
+		[System.Obsolete("Use WaterGeometry.CustomMeshes.Meshes")]
+		public Mesh[] GetCustomMeshesDirect()
+		{
+			return customSurfaceMeshes.Meshes;
+		}
+
+		[System.Obsolete("Use WaterGeometry.CustomMeshes.Meshes")]
 		public void SetCustomMeshes(Mesh[] meshes)
 		{
-			customMeshes = meshes;
-			FilterCustomMeshes();
+			customSurfaceMeshes.Meshes = meshes;
         }
 
 		internal void OnValidate(Water water)
@@ -110,6 +127,7 @@ namespace PlayWay.Water
 			if(radialGrid == null) radialGrid = new WaterRadialGrid();
 			if(projectionGrid == null) projectionGrid = new WaterProjectionGrid();
 			if(uniformGrid == null) uniformGrid = new WaterUniformGrid();
+			if(customSurfaceMeshes == null) customSurfaceMeshes = new WaterCustomSurfaceMeshes();
 
 			// if geometry type changed
 			if(previousType != type)
@@ -124,8 +142,7 @@ namespace PlayWay.Water
 
 				previousType = type;
 			}
-
-			FilterCustomMeshes();
+			
 			UpdateVertexCount();
 
 			if(previousTargetVertexCount != thisSystemVertexCount)
@@ -139,12 +156,61 @@ namespace PlayWay.Water
 
 		internal void Update()
 		{
-			radialGrid.Update();
-			projectionGrid.Update();
-			uniformGrid.Update();
+			// clean up unused geometries
+			if(++frameCount > 8)
+				frameCount = 0;
+
+			switch(frameCount)
+			{
+				case 0:
+				{
+					radialGrid.Update();
+					break;
+				}
+
+				case 3:
+				{
+					projectionGrid.Update();
+					break;
+				}
+
+				case 6:
+				{
+					uniformGrid.Update();
+					break;
+				}
+			}
 		}
 
-		public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, WaterGeometryType geometryType, int vertexCount = 0)
+		public Mesh[] GetMeshes(WaterGeometryType geometryType, int vertexCount, bool volume)
+		{
+			if(geometryType == WaterGeometryType.ProjectionGrid)
+				throw new System.InvalidOperationException("Projection grid needs camera to be retrieved. Use GetTransformedMeshes instead.");
+
+			Matrix4x4 matrix;
+
+			switch(geometryType)
+			{
+				case WaterGeometryType.Auto:
+				{
+					switch(type)
+					{
+						case Type.RadialGrid: return radialGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+						case Type.ProjectionGrid: return projectionGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+						case Type.UniformGrid: return uniformGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+						case Type.CustomMeshes: return customSurfaceMeshes.GetTransformedMeshes(null, out matrix, volume);
+						default: throw new System.InvalidOperationException("Unknown water geometry type.");
+					}
+				}
+
+				case WaterGeometryType.RadialGrid: return radialGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+				case WaterGeometryType.ProjectionGrid: return projectionGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+				case WaterGeometryType.UniformGrid: return uniformGrid.GetTransformedMeshes(null, out matrix, vertexCount, volume);
+				default: throw new System.InvalidOperationException("Unknown water geometry type.");
+			}
+		}
+
+		public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, WaterGeometryType geometryType, bool volume, int vertexCount = 0)
 		{
 			if(vertexCount == 0)
 			{
@@ -160,25 +226,19 @@ namespace PlayWay.Water
 				{
 					switch(type)
 					{
-						case Type.RadialGrid: return radialGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
-						case Type.ProjectionGrid: return projectionGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
-						case Type.UniformGrid: return uniformGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
-						case Type.CustomMeshes: return GetTransformedCustomMeshes(camera, out matrix);
+						case Type.RadialGrid: return radialGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
+						case Type.ProjectionGrid: return projectionGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
+						case Type.UniformGrid: return uniformGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
+						case Type.CustomMeshes: return customSurfaceMeshes.GetTransformedMeshes(null, out matrix, volume);
 						default: throw new System.InvalidOperationException("Unknown water geometry type.");
 					}
 				}
 
-				case WaterGeometryType.RadialGrid: return radialGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
-				case WaterGeometryType.ProjectionGrid: return projectionGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
-				case WaterGeometryType.UniformGrid: return uniformGrid.GetTransformedMeshes(camera, out matrix, vertexCount);
+				case WaterGeometryType.RadialGrid: return radialGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
+				case WaterGeometryType.ProjectionGrid: return projectionGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
+				case WaterGeometryType.UniformGrid: return uniformGrid.GetTransformedMeshes(camera, out matrix, vertexCount, volume);
 				default: throw new System.InvalidOperationException("Unknown water geometry type.");
 			}
-		}
-
-		private Mesh[] GetTransformedCustomMeshes(Camera camera, out Matrix4x4 matrix)
-		{
-			matrix = water.transform.localToWorldMatrix;
-			return customMeshesFiltered;
 		}
 
 		private void UpdateVertexCount()
@@ -187,11 +247,6 @@ namespace PlayWay.Water
 				Mathf.Min(tesselatedBaseVertexCount, WaterQualitySettings.Instance.MaxTesselatedVertexCount) :
 				Mathf.Min(baseVertexCount, WaterQualitySettings.Instance.MaxVertexCount);
 		}
-
-		private void FilterCustomMeshes()
-		{
-			customMeshesFiltered = customMeshes.Where(m => m != null).ToArray();
-        }
 
 		public enum Type
 		{

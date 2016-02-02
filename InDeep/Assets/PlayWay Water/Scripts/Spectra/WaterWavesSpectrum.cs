@@ -30,6 +30,6 @@ namespace PlayWay.Water
 			get { return gravity; }
 		}
 		
-		abstract public void ComputeSpectrum(Vector3[,] spectrum, System.Random random);
+		abstract public void ComputeSpectrum(Vector3[,] spectrum, float tileSizeMultiplier, int maxResolution, System.Random random);
 	}
 }

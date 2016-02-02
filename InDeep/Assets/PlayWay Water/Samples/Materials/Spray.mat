@@ -79,6 +79,13 @@ Material:
           m_Texture: {fileID: 0}
           m_Scale: {x: 1, y: 1}
           m_Offset: {x: 0, y: 0}
+      data:
+        first:
+          name: _WaterMask
+        second:
+          m_Texture: {fileID: 0}
+          m_Scale: {x: 1, y: 1}
+          m_Offset: {x: 0, y: 0}
     m_Floats:
       data:
         first:
@@ -103,11 +110,11 @@ Material:
       data:
         first:
           name: _Glossiness
-        second: 0.506
+        second: 0.475
       data:
         first:
           name: _BumpScale
-        second: 2.5
+        second: 3
       data:
         first:
           name: _OcclusionStrength
@@ -127,7 +134,7 @@ Material:
       data:
         first:
           name: _Metallic
-        second: 0
+        second: 0.576
       data:
         first:
           name: _EmissionScaleUI
@@ -139,11 +146,15 @@ Material:
       data:
         first:
           name: _TileSize
-        second: 180
+        second: 142.6338
       data:
         first:
           name: _ParticleScale
         second: 2.6
+      data:
+        first:
+          name: _SpecularFresnelBias
+        second: 0.020407815
     m_Colors:
       data:
         first:
@@ -152,7 +163,7 @@ Material:
       data:
         first:
           name: _Color
-        second: {r: 1, g: 1, b: 1, a: 0.291}
+        second: {r: 0.64364463, g: 0.663661, b: 0.684, a: 0.134}
       data:
         first:
           name: _EmissionColorUI

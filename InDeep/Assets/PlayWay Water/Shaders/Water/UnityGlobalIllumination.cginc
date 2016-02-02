@@ -76,7 +76,7 @@ inline void ResetUnityGI(out UnityGI outGI)
 	outGI.indirect.specular = 0;
 }
 
-inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half oneMinusRoughness, half3 normalWorld, bool reflections)
+inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half oneMinusRoughness, half3 normalWorld, bool reflections, half2 dirRoughness)
 {
 	UnityGI o_gi;
 	UNITY_INITIALIZE_OUTPUT(UnityGI, o_gi);
@@ -98,7 +98,7 @@ inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half 
 
 	#if !defined(LIGHTMAP_ON)
 		o_gi.light = data.light;
-		o_gi.light.color *= data.atten;
+		//o_gi.light.color *= data.atten;
 
 	#else
 		// Baked lightmaps
@@ -135,7 +135,7 @@ inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half 
 		#endif
 	#endif
 	
-	#ifdef DYNAMICLIGHTMAP_ON
+	/*#ifdef DYNAMICLIGHTMAP_ON
 		// Dynamic lightmaps
 		fixed4 realtimeColorTex = UNITY_SAMPLE_TEX2D(unity_DynamicLightmap, data.lightmapUV.zw);
 		half3 realtimeColor = DecodeRealtimeLightmap (realtimeColorTex);
@@ -152,14 +152,18 @@ inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half 
 			half4 realtimeNormalTex = UNITY_SAMPLE_TEX2D_SAMPLER(unity_DynamicNormal, unity_DynamicLightmap, data.lightmapUV.zw);
 			o_gi.indirect.diffuse += DecodeDirectionalSpecularLightmap (realtimeColor, realtimeDirTex, normalWorld, true, realtimeNormalTex, o_gi.light3);
 		#endif
-	#endif
+	#endif*/
 	o_gi.indirect.diffuse *= occlusion;
+
+#ifndef _DISPLACED_VOLUME
+	normalWorld.y *= _PlanarReflectionPack.y;
+	normalWorld = normalize(normalWorld);
+#endif
+	half3 worldNormal = reflect(-data.worldViewDir, normalWorld);
 
 	if (reflections)
 	{
 #if _CUBEMAP_REFLECTIONS
-		half3 worldNormal = reflect(-data.worldViewDir, normalWorld);
-
 		#if UNITY_SPECCUBE_BOX_PROJECTION		
 			half3 worldNormal0 = BoxProjectedCubemapDirection (worldNormal, data.worldPos, data.probePosition[0], data.boxMin[0], data.boxMax[0]);
 		#else
@@ -190,21 +194,20 @@ inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half 
 			o_gi.indirect.specular = env0;
 		#endif
 #endif
-		/*half4 distortOffset = half4(worldNormal.xz * _PlanarReflectionDistortion, 0, 0);
-		half4 planarReflection = tex2Dproj(_PlanarReflectionTex, UNITY_PROJ_COORD(data.screenPos + distortOffset));
-		o_gi.indirect.specular += planarReflection.rgb;*/
 	}
 
 	o_gi.indirect.specular *= occlusion;
 
-	PlanarReflection(o_gi, data.screenPos, globalWaterData.distortOffset);
+	PlanarReflection(o_gi, data.screenPos, 1 - oneMinusRoughness, dirRoughness, worldNormal);
+
+	o_gi.indirect.specular *= _ReflectionColor;
 
 	return o_gi;
 }
 
 inline UnityGI UnityGlobalIllumination (UnityGIInput data, half occlusion, half oneMinusRoughness, half3 normalWorld)
 {
-	return UnityGlobalIllumination (data, occlusion, oneMinusRoughness, normalWorld, true);	
+	return UnityGlobalIllumination (data, occlusion, oneMinusRoughness, normalWorld, true, 1.0 - oneMinusRoughness);	
 }
 
 #endif

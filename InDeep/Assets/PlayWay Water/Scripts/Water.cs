@@ -9,13 +9,10 @@ namespace PlayWay.Water
 	/// </summary>
 	[ExecuteInEditMode]
 	[AddComponentMenu("Water/Water (Base Component)", -1)]
-	public class Water : MonoBehaviour, IShaderCollectionBuilder
+	public class Water : MonoBehaviour, IShaderCollectionClient
 	{
 		[SerializeField]
 		private WaterProfile profile;
-
-		[SerializeField]
-		private WaterQualitySettings waterQualitySettings;
 
 		[SerializeField]
 		private Shader waterShader;
@@ -45,13 +42,6 @@ namespace PlayWay.Water
 		[SerializeField]
 		private bool useCubemapReflections = true;
 
-		[SerializeField]
-		private Transform windDirectionPointer;
-
-		[Tooltip("Use ambient color each frame at runtime to update water depth color (based on it's initial value). Currently, it's not supported for the \"skybox\" ambient mode.")]
-		[SerializeField]
-		private bool autoDepthColor = true;
-
 		[Tooltip("Set it to anything else than 0 if your game has multiplayer functionality or you want your water to behave the same way each time your game is played (good for intro etc.).")]
 		[SerializeField]
 		private int seed = 0;
@@ -59,16 +49,10 @@ namespace PlayWay.Water
 		[Tooltip("May hurt performance on some systems.")]
 		[Range(0.0f, 1.0f)]
 		[SerializeField]
-		private float tesselationFactor = 0.88f;
+		private float tesselationFactor = 1.0f;
 
 		[SerializeField]
-		private SpectraRenderer spectraRenderer;
-
-		[SerializeField]
-		private WaterPrecompute waterPrecompute;
-
-		[SerializeField]
-		private WaterUvAnimator waterUvAnimator;
+		private WaterUvAnimator uvAnimator;
 
 		[SerializeField]
 		private WaterVolume volume;
@@ -77,43 +61,74 @@ namespace PlayWay.Water
 		private WaterGeometry geometry;
 
 		[SerializeField]
-		private new WaterRenderer renderer;
-		
-		[SerializeField]
-		private int namesHash = -1;
-
-		[SerializeField]
-		private WaterEvent windDirectionChanged;
+		private WaterRenderer waterRenderer;
 
 		[SerializeField]
 		private WaterEvent profilesChanged;
 
 		[SerializeField]
-		private bool inserted;
+		private Material waterMaterialPrefab;
+
+		[SerializeField]
+		private Material waterVolumeMaterialPrefab;
+
+#if UNITY_EDITOR
+#pragma warning disable 0414
+		[SerializeField]
+		private float version = 1.0f;
+#pragma warning restore 0414
+
+		// used to identify this water object for the purpose of shader collection building
+		[SerializeField]
+		private int sceneHash = -1;
+
+		private int instanceId = -1;
+#endif
 
 		private WeightedProfile[] profiles;
 		private bool profilesDirty;
 
 		private Material waterMaterial;
+		private Material waterBackMaterial;
 		private Material waterVolumeMaterial;
 
-		private int instanceId = -1;
-		private float tileSize;
-		private float windSpeedMagnitude;
 		private float horizontalDisplacementScale;
 		private float gravity;
 		private float directionality;
 		private float density;
+		private float underwaterBlurSize;
+		private float underwaterDistortionsIntensity;
+		private float underwaterDistortionAnimationSpeed;
+		private float time = -1;
 		private Color underwaterAbsorptionColor;
-		private Color maxDepthColor;
-		private Vector2 lastWindDirection;
+		private float maxHorizontalDisplacement;
+		private float maxVerticalDisplacement;
+		private int waterId;
+		private int surfaceOffsetId;
+		private int activeSamplesCount;
+		private LaunchState launchState = LaunchState.Disabled;
+		private Vector2 surfaceOffset = new Vector2(float.NaN, float.NaN);
 		private IWaterRenderAware[] renderAwareComponents;
+		private IWaterDisplacements[] displacingComponents;
+
+		static private int nextWaterId = 1;
 
 		static private string[] parameterNames = new string[] {
-			"_AbsorptionColor", "_Color", "_SpecColor", "_DepthColor", "_EmissionColor", "_DisplacementsScale", "_Glossiness",
-			"_SubsurfaceScatteringPack", "_WrapSubsurfaceScatteringPack", "_RefractionDistortion", "_SpecularFresnelBias", "_DistantFadeFactors",
-			"_DisplacementNormalsIntensity", "_EdgeBlendFactorInv", "_PlanarReflectionPack", "_BumpScale", "_FoamTiling", "_WaterTileSize",
-			"_BumpMap", "_FoamTex", "_FoamNormalMap"
+			"_AbsorptionColor", "_Color", "_SpecColor", "_DepthColor", "_EmissionColor", "_ReflectionColor", "_DisplacementsScale", "_Glossiness",
+			"_SubsurfaceScatteringPack", "_WrapSubsurfaceScatteringPack", "_RefractionDistortion", "_SpecularFresnelBias", "_DetailFadeFactor",
+			"_DisplacementNormalsIntensity", "_EdgeBlendFactorInv", "_PlanarReflectionPack", "_BumpScale", "_FoamTiling", "_LightSmoothnessMul",
+			"_BumpMap", "_FoamTex", "_FoamNormalMap",
+			"_FoamSpecularColor"
+		};
+
+		static private string[] disallowedVolumeKeywords = new string[] {
+			"_WAVES_FFT_SLOPE", "_WAVES_GERSTNER", "_WATER_FOAM_WS", "_PLANAR_REFLECTIONS", "_PLANAR_REFLECTIONS_HQ",
+			"_INCLUDE_SLOPE_VARIANCE", "_NORMALMAP", "_PROJECTION_GRID", "_WATER_OVERLAYS", "_WAVES_ALIGN", "_TRIANGLES",
+			"_BOUNDED_WATER"
+		};
+
+		static private string[] hardwareDependentKeywords = new string[] {
+			/*"_INCLUDE_SLOPE_VARIANCE", */"_WATER_FOAM_WS"
 		};
 
 		private int[] parameterHashes;
@@ -125,12 +140,29 @@ namespace PlayWay.Water
 
 		void Awake()
 		{
-			if(!inserted)
-			{
-				AddDefaultComponents();
+			waterId = nextWaterId;
+			nextWaterId <<= 1;
 
-				inserted = true;
-            }
+			bool inserted = (volume == null);
+
+			CreateWaterManagers();
+
+			if(inserted)
+			{
+				gameObject.layer = WaterProjectSettings.Instance.WaterLayer;
+
+#if UNITY_EDITOR
+				// add default components only in editor, out of play mode
+				if(!Application.isPlaying)
+					AddDefaultComponents();
+
+				version = WaterProjectSettings.CurrentVersion;
+#endif
+			}
+
+			CreateParameterHashes();
+			renderAwareComponents = GetComponents<IWaterRenderAware>();
+			displacingComponents = GetComponents<IWaterDisplacements>();
 
 			if(!Application.isPlaying)
 				return;
@@ -144,11 +176,6 @@ namespace PlayWay.Water
 
 			try
 			{
-				CreateParameterHashes();
-
-				renderAwareComponents = GetComponents<IWaterRenderAware>();
-				lastWindDirection = WindDirection;
-
 				CreateMaterials();
 
 				if(profiles == null)
@@ -157,14 +184,8 @@ namespace PlayWay.Water
 					ResolveProfileData(profiles);
 				}
 
-				waterUvAnimator.Start(this);
-				spectraRenderer.Start(this);
-				waterPrecompute.Start(this);
-
-				maxDepthColor = waterMaterial.GetColor("_DepthColor");
-
+				uvAnimator.Start(this);
 				profilesChanged.AddListener(OnProfilesChanged);
-				windDirectionChanged.AddListener(OnWindDirectionChanged);
 			}
 			catch(System.Exception e)
 			{
@@ -175,11 +196,20 @@ namespace PlayWay.Water
 
 		void Start()
 		{
-			spectraRenderer.OnValidate(this);
-
+			launchState = LaunchState.Started;
 			SetupMaterials();
+
+			if(profiles != null)
+				ResolveProfileData(profiles);
+
+			profilesDirty = true;
 		}
-		
+
+		public int WaterId
+		{
+			get { return waterId; }
+		}
+
 		public Material WaterMaterial
 		{
 			get
@@ -188,6 +218,17 @@ namespace PlayWay.Water
 					CreateMaterials();
 
 				return waterMaterial;
+			}
+		}
+
+		public Material WaterBackMaterial
+		{
+			get
+			{
+				if(waterBackMaterial == null)
+					CreateMaterials();
+
+				return waterBackMaterial;
 			}
 		}
 
@@ -200,45 +241,6 @@ namespace PlayWay.Water
 
 				return waterVolumeMaterial;
 			}
-		}
-
-		/// <summary>
-		/// Current wind speed as resolved from the currently set profiles.
-		/// </summary>
-		public Vector2 WindSpeed
-		{
-			get
-			{
-				if(windDirectionPointer != null)
-				{
-					Vector3 forward = windDirectionPointer.forward;
-					return new Vector2(forward.x, forward.z).normalized * windSpeedMagnitude;
-				}
-				else
-					return Vector2.zero;
-			}
-		}
-
-		/// <summary>
-		/// Current wind direction. It's controlled by the WindDirectionPointer.
-		/// </summary>
-		public Vector2 WindDirection
-		{
-			get
-			{
-				if(windDirectionPointer != null)
-				{
-					Vector3 forward = windDirectionPointer.forward;
-					return new Vector2(forward.x, forward.z).normalized;
-				}
-				else
-					return Vector2.zero;
-			}
-		}
-
-		public Transform WindDirectionPointer
-		{
-			get { return windDirectionPointer; }
 		}
 
 		/// <summary>
@@ -262,11 +264,6 @@ namespace PlayWay.Water
 		public ShadowCastingMode ShadowCastingMode
 		{
 			get { return shadowCastingMode; }
-		}
-
-		public float TileSize
-		{
-			get { return tileSize; }
 		}
 
 		public float Gravity
@@ -295,11 +292,11 @@ namespace PlayWay.Water
 		}
 
 		/// <summary>
-		/// Event invoked when wind direction changes.
+		/// Count of WaterSample instances targetted on this water.
 		/// </summary>
-		public WaterEvent WindDirectionChanged
+		public int ComputedSamplesCount
 		{
-			get { return windDirectionChanged; }
+			get { return activeSamplesCount; }
 		}
 
 		/// <summary>
@@ -308,22 +305,6 @@ namespace PlayWay.Water
 		public WaterEvent ProfilesChanged
 		{
 			get { return profilesChanged; }
-		}
-
-		/// <summary>
-		/// Retrieves a SpectraRenderer of this water. It's one of the classes providing basic water functionality.
-		/// </summary>
-		public SpectraRenderer SpectraRenderer
-		{
-			get { return spectraRenderer; }
-		}
-
-		/// <summary>
-		/// Retrieves a WaterPrecompute of this water. It's one of the classes providing basic water functionality.
-		/// </summary>
-		public WaterPrecompute WaterPrecompute
-		{
-			get { return waterPrecompute; }
 		}
 
 		/// <summary>
@@ -347,7 +328,7 @@ namespace PlayWay.Water
 		/// </summary>
 		public WaterRenderer Renderer
 		{
-			get { return renderer; }
+			get { return waterRenderer; }
 		}
 
 		public int Seed
@@ -355,10 +336,25 @@ namespace PlayWay.Water
 			get { return seed; }
 			set { seed = value; }
 		}
-		
+
 		public float Density
 		{
 			get { return density; }
+		}
+
+		public float UnderwaterBlurSize
+		{
+			get { return underwaterBlurSize; }
+		}
+
+		public float UnderwaterDistortionsIntensity
+		{
+			get { return underwaterDistortionsIntensity; }
+		}
+
+		public float UnderwaterDistortionAnimationSpeed
+		{
+			get { return underwaterDistortionAnimationSpeed; }
 		}
 
 		public ShaderCollection ShaderCollection
@@ -366,19 +362,44 @@ namespace PlayWay.Water
 			get { return shaderCollection; }
 		}
 
+		public float MaxHorizontalDisplacement
+		{
+			get { return maxHorizontalDisplacement; }
+		}
+
+		public float MaxVerticalDisplacement
+		{
+			get { return maxVerticalDisplacement; }
+		}
+
+		public float Time
+		{
+			get { return time == -1 ? UnityEngine.Time.time : time; }
+			set { time = value; }
+		}
+
+		public Vector2 SurfaceOffset
+		{
+			get { return float.IsNaN(surfaceOffset.x) ? new Vector2(-transform.position.x, -transform.position.z) : surfaceOffset; }
+			set { surfaceOffset = value; }
+		}
+
 		void OnEnable()
 		{
 			CreateParameterHashes();
+			ValidateShaders();
 
 #if UNITY_EDITOR
-			OnValidate();
-#endif
-			
 			if(!IsNotCopied())
 				shaderCollection = null;
 
 			instanceId = GetInstanceID();
-            CreateMaterials();
+#else
+			if(Application.isPlaying)
+				shaderCollection = null;
+#endif
+
+			CreateMaterials();
 
 			if(profiles == null && profile != null)
 			{
@@ -388,15 +409,18 @@ namespace PlayWay.Water
 
 			WaterQualitySettings.Instance.Changed -= OnQualitySettingsChanged;
 			WaterQualitySettings.Instance.Changed += OnQualitySettingsChanged;
-			
+
 			WaterGlobals.Instance.AddWater(this);
 
 			if(geometry != null)
 			{
 				geometry.OnEnable(this);
-				renderer.OnEnable(this);
+				waterRenderer.OnEnable(this);
 				volume.OnEnable(this);
 			}
+
+			//if(Application.isPlaying)
+			//	SetupMaterials();
 		}
 
 		void OnDisable()
@@ -404,37 +428,104 @@ namespace PlayWay.Water
 			WaterGlobals.Instance.RemoveWater(this);
 
 			geometry.OnDisable();
-			renderer.OnDisable();
+			waterRenderer.OnDisable();
 			volume.OnDisable();
 		}
 
 		void OnDestroy()
 		{
 			WaterQualitySettings.Instance.Changed -= OnQualitySettingsChanged;
-
-			if(spectraRenderer != null) spectraRenderer.OnDestroy();
 		}
 
-		public float GetHeightAt(float x, float z, float precision = 1.0f, int correctionSteps = 0)
+		/// <summary>
+		/// Computes water displacement vector at a given coordinates. WaterSample class does the same thing asynchronously and is recommended.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="z"></param>
+		/// <param name="spectrumStart"></param>
+		/// <param name="spectrumEnd"></param>
+		/// <param name="time"></param>
+		/// <returns></returns>
+		public Vector3 GetDisplacementAt(float x, float z, float spectrumStart, float spectrumEnd, float time)
 		{
-			float tx = x, tz = z;
-			float correctionPrecision = precision * 0.4f;
+			Vector3 result = new Vector3();
 
-			for(int i = 0; i < correctionSteps; ++i)
-			{
-				Vector2 displacement = spectraRenderer.GetHorizontalDisplacementAt(x, z, 0, correctionPrecision);
+			for(int i = 0; i < displacingComponents.Length; ++i)
+				result += displacingComponents[i].GetDisplacementAt(x, z, spectrumStart, spectrumEnd, time);
 
-				x += (tx - (x + displacement.x)) * 0.75f;
-				z += (tz - (z + displacement.y)) * 0.75f;
-			}
-
-			return spectraRenderer.GetHeightAt(x, z, 0.0f, precision);
+			return result;
 		}
 
+		/// <summary>
+		/// Computes horizontal displacement vector at a given coordinates. WaterSample class does the same thing asynchronously and is recommended.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="z"></param>
+		/// <param name="spectrumStart"></param>
+		/// <param name="spectrumEnd"></param>
+		/// <param name="time"></param>
+		/// <returns></returns>
+		public Vector2 GetHorizontalDisplacementAt(float x, float z, float spectrumStart, float spectrumEnd, float time)
+		{
+			Vector2 result = new Vector2();
+
+			for(int i = 0; i < displacingComponents.Length; ++i)
+				result += displacingComponents[i].GetHorizontalDisplacementAt(x, z, spectrumStart, spectrumEnd, time);
+
+			return result;
+		}
+
+		/// <summary>
+		/// Computes height at a given coordinates. WaterSample class does the same thing asynchronously and is recommended.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="z"></param>
+		/// <param name="spectrumStart"></param>
+		/// <param name="spectrumEnd"></param>
+		/// <param name="time"></param>
+		/// <returns></returns>
+		public float GetHeightAt(float x, float z, float spectrumStart, float spectrumEnd, float time)
+		{
+			float result = 0.0f;
+
+			for(int i = 0; i < displacingComponents.Length; ++i)
+				result += displacingComponents[i].GetHeightAt(x, z, spectrumStart, spectrumEnd, time);
+
+			return result;
+		}
+
+		/// <summary>
+		/// Computes forces and height at a given coordinates. WaterSample class does the same thing asynchronously and is recommended.
+		/// </summary>
+		/// <param name="x"></param>
+		/// <param name="z"></param>
+		/// <param name="spectrumStart"></param>
+		/// <param name="spectrumEnd"></param>
+		/// <param name="time"></param>
+		/// <returns></returns>
+		public Vector4 GetHeightAndForcesAt(float x, float z, float spectrumStart, float spectrumEnd, float time)
+		{
+			Vector4 result = Vector4.zero;
+
+			for(int i = 0; i < displacingComponents.Length; ++i)
+				result += displacingComponents[i].GetForceAndHeightAt(x, z, spectrumStart, spectrumEnd, time);
+
+			return result;
+		}
+
+		/// <summary>
+		/// Caches profiles for later use to avoid hiccups.
+		/// </summary>
+		/// <param name="profiles"></param>
 		public void CacheProfiles(params WaterProfile[] profiles)
 		{
-			foreach(var profile in profiles)
-				spectraRenderer.CacheSpectrum(profile.Spectrum);
+			var windWaves = GetComponent<WindWaves>();
+
+			if(windWaves != null)
+			{
+				foreach(var profile in profiles)
+					windWaves.SpectrumResolver.CacheSpectrum(profile.Spectrum);
+			}
 		}
 
 		public void SetProfiles(params WeightedProfile[] profiles)
@@ -445,40 +536,97 @@ namespace PlayWay.Water
 			profilesDirty = true;
 		}
 
+		public void InvalidateMaterialKeywords()
+		{
+
+		}
+
 		private void CreateMaterials()
 		{
 			if(waterMaterial == null)
 			{
-				waterMaterial = new Material(waterShader);
+				if(waterMaterialPrefab == null)
+					waterMaterial = new Material(waterShader);
+				else
+					waterMaterial = Instantiate(waterMaterialPrefab);
+
 				waterMaterial.hideFlags = HideFlags.DontSave;
+				waterMaterial.SetVector("_WaterId", new Vector4(waterId, waterId << 1, 0, 0));
+			}
+
+			if(waterBackMaterial == null)
+			{
+				if(waterMaterialPrefab == null)
+					waterBackMaterial = new Material(waterShader);
+				else
+					waterBackMaterial = Instantiate(waterMaterialPrefab);
+
+				waterBackMaterial.hideFlags = HideFlags.DontSave;
+				UpdateBackMaterial();
 			}
 
 			if(waterVolumeMaterial == null)
 			{
-				waterVolumeMaterial = new Material(waterVolumeShader);
+				if(waterVolumeMaterialPrefab == null)
+					waterVolumeMaterial = new Material(waterVolumeShader);
+				else
+					waterVolumeMaterial = Instantiate(waterVolumeMaterialPrefab);
+
 				waterVolumeMaterial.hideFlags = HideFlags.DontSave;
+				UpdateWaterVolumeMaterial();
 			}
 		}
 
 		private void SetupMaterials()
 		{
-			var waterQualitySettings = WaterQualitySettings.Instance;
-            BuildShaderVariant(waterMaterial, waterQualitySettings.GetQualityLevelsDirect()[waterQualitySettings.GetQualityLevel()]);
+			if(launchState == LaunchState.Disabled)
+				return;
 
-			ValidateShaderCollection(waterMaterial);
-			ValidateShaderCollection(waterVolumeMaterial);
+			var waterQualitySettings = WaterQualitySettings.Instance;
+
+			// front and back material
+			var variant = new ShaderVariant();
+			BuildShaderVariant(variant, waterQualitySettings.CurrentQualityLevel);
+			
+			ValidateShaderCollection(variant);
+
+			if(shaderCollection != null)
+				waterMaterial.shader = shaderCollection.GetShaderVariant(variant.GetWaterKeywords(), variant.GetUnityKeywords(), variant.GetKeywordsString(), false);
+			else
+				waterMaterial.shader = ShaderCollection.GetRuntimeShaderVariant(variant.GetKeywordsString(), false);
+
+			waterMaterial.shaderKeywords = variant.GetUnityKeywords();
+			UpdateMaterials();
+			UpdateBackMaterial();
+
+			// volume material
+			foreach(string keyword in disallowedVolumeKeywords)
+				variant.SetWaterKeyword(keyword, false);
+			
+			if(shaderCollection != null)
+				waterVolumeMaterial.shader = shaderCollection.GetShaderVariant(variant.GetWaterKeywords(), variant.GetUnityKeywords(), variant.GetKeywordsString(), true);
+			else
+				waterVolumeMaterial.shader = ShaderCollection.GetRuntimeShaderVariant(variant.GetKeywordsString(), true);
+			
+			UpdateWaterVolumeMaterial();
+			waterVolumeMaterial.shaderKeywords = variant.GetUnityKeywords();
 		}
 
-		private void ValidateShaderCollection(Material material)
+		private void SetShader(ref Material material, Shader shader)
+		{
+
+		}
+
+		private void ValidateShaderCollection(ShaderVariant variant)
 		{
 #if UNITY_EDITOR
-			if(!Application.isPlaying && shaderCollection != null && !shaderCollection.ContainsShaderVariant(material.shader, material.shaderKeywords))
-				RebuildShaderCollection();
+			if(!Application.isPlaying && shaderCollection != null && !shaderCollection.ContainsShaderVariant(variant.GetKeywordsString()))
+				RebuildShaders();
 #endif
 		}
 
-		[ContextMenu("Rebuild Shader Collection")]
-		private void RebuildShaderCollection()
+		[ContextMenu("Rebuild Shaders")]
+		private void RebuildShaders()
 		{
 #if UNITY_EDITOR
 			if(shaderCollection == null)
@@ -487,8 +635,19 @@ namespace PlayWay.Water
 				return;
 			}
 
-			ShaderCollectionRebuilder.Instance.Rebuild(shaderCollection);
+			shaderCollection.Build();
 #endif
+		}
+
+		private void UpdateBackMaterial()
+		{
+			if(waterBackMaterial != null)
+			{
+				waterBackMaterial.shader = waterMaterial.shader;
+				waterBackMaterial.CopyPropertiesFromMaterial(waterMaterial);
+				waterBackMaterial.EnableKeyword("_WATER_BACK");
+				waterBackMaterial.SetFloat("_Cull", 1);
+			}
 		}
 
 		private void UpdateWaterVolumeMaterial()
@@ -496,11 +655,22 @@ namespace PlayWay.Water
 			if(waterVolumeMaterial != null)
 			{
 				waterVolumeMaterial.CopyPropertiesFromMaterial(waterMaterial);
-				waterVolumeMaterial.renderQueue = (refraction || blendEdges) ? 2991 : 2001;
-				waterVolumeMaterial.DisableKeyword("_FFT_WAVES");
-				waterVolumeMaterial.DisableKeyword("_GERSTNER_WAVES");
-				waterVolumeMaterial.EnableKeyword("_DISPLACED_VOLUME");
+				waterVolumeMaterial.renderQueue = (refraction || blendEdges) ? 2991 : 2000;
 			}
+		}
+
+		public void SetVector(int materialPropertyId, Vector4 vector)
+		{
+			waterMaterial.SetVector(materialPropertyId, vector);
+			waterBackMaterial.SetVector(materialPropertyId, vector);
+			waterVolumeMaterial.SetVector(materialPropertyId, vector);
+		}
+
+		public void SetFloat(int materialPropertyId, float value)
+		{
+			waterMaterial.SetFloat(materialPropertyId, value);
+			waterBackMaterial.SetFloat(materialPropertyId, value);
+			waterVolumeMaterial.SetFloat(materialPropertyId, value);
 		}
 
 		public bool SetKeyword(string keyword, bool enable)
@@ -512,6 +682,8 @@ namespace PlayWay.Water
 					if(!waterMaterial.IsKeywordEnabled(keyword))
 					{
 						waterMaterial.EnableKeyword(keyword);
+						waterBackMaterial.EnableKeyword(keyword);
+						waterVolumeMaterial.EnableKeyword(keyword);
 						return true;
 					}
 				}
@@ -520,6 +692,8 @@ namespace PlayWay.Water
 					if(waterMaterial.IsKeywordEnabled(keyword))
 					{
 						waterMaterial.DisableKeyword(keyword);
+						waterBackMaterial.DisableKeyword(keyword);
+						waterVolumeMaterial.DisableKeyword(keyword);
 						return true;
 					}
 				}
@@ -530,18 +704,14 @@ namespace PlayWay.Water
 
 		public void OnValidate()
 		{
-			if(waterShader == null)
-				waterShader = Shader.Find("PlayWay Water/Standard");
-
-			if(waterVolumeShader == null)
-				waterVolumeShader = Shader.Find("PlayWay Water/Standard Volume");
+			ValidateShaders();
 
 			renderAwareComponents = GetComponents<IWaterRenderAware>();
-			gameObject.layer = 4;
+			displacingComponents = GetComponents<IWaterDisplacements>();
 
 			if(waterMaterial == null)
 				return;                 // wait for OnEnable
-			
+
 			CreateParameterHashes();
 
 			if(profiles != null && profiles.Length != 0)
@@ -550,11 +720,18 @@ namespace PlayWay.Water
 				ResolveProfileData(new WeightedProfile[] { new WeightedProfile(profile, 1.0f) });
 
 			geometry.OnValidate(this);
-			renderer.OnValidate(this);
-			spectraRenderer.OnValidate(this);
-			waterPrecompute.OnValidate(this);
-			
+			waterRenderer.OnValidate(this);
+
 			SetupMaterials();
+		}
+
+		private void ValidateShaders()
+		{
+			if(waterShader == null)
+				waterShader = Shader.Find("PlayWay Water/Standard");
+
+			if(waterVolumeShader == null)
+				waterVolumeShader = Shader.Find("PlayWay Water/Standard Volume");
 		}
 
 		private void ResolveProfileData(WeightedProfile[] profiles)
@@ -571,12 +748,13 @@ namespace PlayWay.Water
 				}
 			}
 
-			tileSize = 0.0f;
 			horizontalDisplacementScale = 0.0f;
-			windSpeedMagnitude = 0.0f;
 			gravity = 0.0f;
 			directionality = 0.0f;
 			density = 0.0f;
+			underwaterBlurSize = 0.0f;
+			underwaterDistortionsIntensity = 0.0f;
+			underwaterDistortionAnimationSpeed = 0.0f;
 			underwaterAbsorptionColor = new Color(0.0f, 0.0f, 0.0f);
 
 			Color absorptionColor = new Color(0.0f, 0.0f, 0.0f);
@@ -584,13 +762,14 @@ namespace PlayWay.Water
 			Color specularColor = new Color(0.0f, 0.0f, 0.0f);
 			Color depthColor = new Color(0.0f, 0.0f, 0.0f);
 			Color emissionColor = new Color(0.0f, 0.0f, 0.0f);
-			
+			Color reflectionColor = new Color(0.0f, 0.0f, 0.0f);
+			Color foamSpecularColor = new Color(0.0f, 0.0f, 0.0f);
+
 			float smoothness = 0.0f;
+			float ambientSmoothness = 0.0f;
 			float subsurfaceScattering = 0.0f;
 			float refractionDistortion = 0.0f;
 			float fresnelBias = 0.0f;
-			float normalsFadeBias = 0.0f;
-			float normalsFadeDistance = 0.0f;
 			float detailFadeDistance = 0.0f;
 			float displacementNormalsIntensity = 0.0f;
 			float edgeBlendFactor = 0.0f;
@@ -607,12 +786,13 @@ namespace PlayWay.Water
 				var profile = weightedProfile.profile;
 				float weight = weightedProfile.weight;
 
-				tileSize += profile.TileSize * profile.TileScale * weight;
 				horizontalDisplacementScale += profile.HorizontalDisplacementScale * weight;
-				windSpeedMagnitude += profile.WindSpeed * weight;
 				gravity -= profile.Gravity * weight;
 				directionality += profile.Directionality * weight;
 				density += profile.Density * weight;
+				underwaterBlurSize += profile.UnderwaterBlurSize * weight;
+				underwaterDistortionsIntensity += profile.UnderwaterDistortionsIntensity * weight;
+				underwaterDistortionAnimationSpeed += profile.UnderwaterDistortionAnimationSpeed * weight;
 				underwaterAbsorptionColor += profile.UnderwaterAbsorptionColor * weight;
 
 				absorptionColor += profile.AbsorptionColor * weight;
@@ -620,87 +800,92 @@ namespace PlayWay.Water
 				specularColor += profile.SpecularColor * weight;
 				depthColor += profile.DepthColor * weight;
 				emissionColor += profile.EmissionColor * weight;
-				
+				reflectionColor += profile.ReflectionColor * weight;
+				foamSpecularColor += profile.FoamSpecularColor * weight;
+
 				smoothness += profile.Smoothness * weight;
+				ambientSmoothness += profile.AmbientSmoothness * weight;
 				subsurfaceScattering += profile.SubsurfaceScattering * weight;
 				refractionDistortion += profile.RefractionDistortion * weight;
 				fresnelBias += profile.FresnelBias * weight;
-				normalsFadeBias += profile.NormalsFadeBias * weight;
-				normalsFadeDistance += profile.NormalsFadeDistance * weight;
 				detailFadeDistance += profile.DetailFadeDistance * weight;
 				displacementNormalsIntensity += profile.DisplacementNormalsIntensity * weight;
 				edgeBlendFactor += profile.EdgeBlendFactor * weight;
 				directionalWrapSSS += profile.DirectionalWrapSSS * weight;
 				pointWrapSSS += profile.PointWrapSSS * weight;
 
-				planarReflectionPack.x -= profile.PlanarReflectionDistortion * weight;
-				planarReflectionPack.y += profile.PlanarReflectionIntensity * weight;
-				planarReflectionPack.z += profile.PlanarReflectionOffset * weight;
+				planarReflectionPack.x += profile.PlanarReflectionIntensity * weight;
+				planarReflectionPack.y += profile.PlanarReflectionFlatten * weight;
+				planarReflectionPack.z += profile.PlanarReflectionVerticalOffset * weight;
 
 				foamTiling += profile.FoamTiling * weight;
 				normalMapAnimation1 += profile.NormalMapAnimation1 * weight;
 				normalMapAnimation2 += profile.NormalMapAnimation2 * weight;
 			}
 
-			// scale by quality settings
-			var waterQualitySettings = WaterQualitySettings.Instance;
-			tileSize *= waterQualitySettings.TileSizeScale;
+			var windWaves = GetComponent<WindWaves>();
 
-			var wavesFFT = GetComponent<WaterWavesFFT>();
-
-			if(wavesFFT != null && wavesFFT.FinalRenderedMaps == WaterWavesFFT.MapType.Slope)
+			if(windWaves != null && windWaves.FinalRenderMode == WaveSpectrumRenderMode.GerstnerAndFFTSlope)
 				displacementNormalsIntensity *= 0.5f;
 
 			// apply to materials
-			waterMaterial.SetColor(parameterHashes[0], absorptionColor);
-			waterMaterial.SetColor(parameterHashes[1], diffuseColor);
-			waterMaterial.SetColor(parameterHashes[2], specularColor);
-			waterMaterial.SetColor(parameterHashes[3], depthColor);
-			waterMaterial.SetColor(parameterHashes[4], emissionColor);
-			waterMaterial.SetFloat(parameterHashes[5], horizontalDisplacementScale);
+			waterMaterial.SetColor(parameterHashes[0], absorptionColor);                    // _AbsorptionColor
+			waterMaterial.SetColor(parameterHashes[1], diffuseColor);                       // _Color
+			waterMaterial.SetColor(parameterHashes[2], specularColor);                      // _SpecColor
+			waterMaterial.SetColor(parameterHashes[3], depthColor);                         // _DepthColor
+			waterMaterial.SetColor(parameterHashes[4], emissionColor);                      // _EmissionColor
+			waterMaterial.SetColor(parameterHashes[5], reflectionColor);                    // _ReflectionColor
+			waterMaterial.SetColor(parameterHashes[22], foamSpecularColor);					// _FoamSpecularColor
+			waterMaterial.SetFloat(parameterHashes[6], horizontalDisplacementScale);        // _DisplacementsScale
 
-			waterMaterial.SetFloat(parameterHashes[6], smoothness);
-			waterMaterial.SetVector(parameterHashes[7], new Vector4(subsurfaceScattering, 0.15f, 1.65f, 0.0f));
-			waterMaterial.SetVector(parameterHashes[8], new Vector4(directionalWrapSSS, 1.0f / (1.0f + directionalWrapSSS), pointWrapSSS, 1.0f / (1.0f + pointWrapSSS)));
-			waterMaterial.SetFloat(parameterHashes[9], refractionDistortion);
-			waterMaterial.SetFloat(parameterHashes[10], fresnelBias);
-			waterMaterial.SetVector(parameterHashes[11], new Vector4(1.0f - normalsFadeBias / normalsFadeDistance, 1.0f / normalsFadeDistance, 1.0f / (tileSize * detailFadeDistance), 0.0f));
-			waterMaterial.SetFloat(parameterHashes[12], displacementNormalsIntensity);
-			waterMaterial.SetFloat(parameterHashes[13], 1.0f / edgeBlendFactor);
-			waterMaterial.SetVector(parameterHashes[14], planarReflectionPack);
-			waterMaterial.SetVector(parameterHashes[15], new Vector4(normalMapAnimation1.Intensity, normalMapAnimation2.Intensity, -(normalMapAnimation1.Intensity + normalMapAnimation2.Intensity) * 0.5f, 0.0f));
-			waterMaterial.SetTextureScale("_BumpMap", normalMapAnimation1.Tiling);
-			waterMaterial.SetTextureScale("_DetailAlbedoMap", normalMapAnimation2.Tiling);
-			waterMaterial.SetVector(parameterHashes[16], new Vector2(foamTiling.x / normalMapAnimation1.Tiling.x, foamTiling.y / normalMapAnimation1.Tiling.y));
-			waterMaterial.SetFloat(parameterHashes[17], tileSize);
+			waterMaterial.SetFloat(parameterHashes[7], ambientSmoothness);                         // _Glossiness
+			waterMaterial.SetVector(parameterHashes[8], new Vector4(subsurfaceScattering, 0.15f, 1.65f, 0.0f));             // _SubsurfaceScatteringPack
+			waterMaterial.SetVector(parameterHashes[9], new Vector4(directionalWrapSSS, 1.0f / (1.0f + directionalWrapSSS), pointWrapSSS, 1.0f / (1.0f + pointWrapSSS)));           // _WrapSubsurfaceScatteringPack
+			waterMaterial.SetFloat(parameterHashes[10], refractionDistortion);               // _RefractionDistortion
+			waterMaterial.SetFloat(parameterHashes[11], fresnelBias);                       // _SpecularFresnelBias
+			waterMaterial.SetFloat(parameterHashes[12], detailFadeDistance);                // _DetailFadeFactor
+			waterMaterial.SetFloat(parameterHashes[13], displacementNormalsIntensity);      // _DisplacementNormalsIntensity
+			waterMaterial.SetFloat(parameterHashes[14], 1.0f / edgeBlendFactor);            // _EdgeBlendFactorInv
+			waterMaterial.SetVector(parameterHashes[15], planarReflectionPack);             // _PlanarReflectionPack
+			waterMaterial.SetVector(parameterHashes[16], new Vector4(normalMapAnimation1.Intensity, normalMapAnimation2.Intensity, -(normalMapAnimation1.Intensity + normalMapAnimation2.Intensity) * 0.5f, 0.0f));             // _BumpScale
+			waterMaterial.SetVector(parameterHashes[17], new Vector2(foamTiling.x / normalMapAnimation1.Tiling.x, foamTiling.y / normalMapAnimation1.Tiling.y));                    // _FoamTiling
+			waterMaterial.SetFloat(parameterHashes[18], smoothness / ambientSmoothness);    // _LightSmoothnessMul
 
-			waterMaterial.SetTexture(parameterHashes[18], topProfile.NormalMap);
-			waterMaterial.SetTexture(parameterHashes[19], topProfile.FoamDiffuseMap);
-			waterMaterial.SetTexture(parameterHashes[20], topProfile.FoamNormalMap);
+			waterMaterial.SetTexture(parameterHashes[19], topProfile.NormalMap);            // _BumpMap
+			waterMaterial.SetTexture(parameterHashes[20], topProfile.FoamDiffuseMap);       // _FoamTex
+			waterMaterial.SetTexture(parameterHashes[21], topProfile.FoamNormalMap);        // _FoamNormalMap
 
-			waterUvAnimator.NormalMapAnimation1 = normalMapAnimation1;
-			waterUvAnimator.NormalMapAnimation2 = normalMapAnimation2;
+			uvAnimator.NormalMapAnimation1 = normalMapAnimation1;
+			uvAnimator.NormalMapAnimation2 = normalMapAnimation2;
 
 			SetKeyword("_EMISSION", emissionColor.grayscale != 0);
 
+			UpdateBackMaterial();
 			UpdateWaterVolumeMaterial();
 		}
 
 		void Update()
 		{
 			if(!Application.isPlaying) return;
+			
+			transform.eulerAngles = new Vector3(0.0f, transform.eulerAngles.y, 0.0f);
 
-			waterPrecompute.Update();
-			waterUvAnimator.Update();
+			UpdateStatisticalData();
+
+			uvAnimator.Update();
 			geometry.Update();
-
-			if(autoDepthColor)
-				UpdateDepthColor();
+			waterRenderer.Update();
 
 			FireEvents();
 
+			if(launchState != LaunchState.Ready)
+			{
+				SetupMaterials();
+				launchState = LaunchState.Ready;
+			}
+
 #if WATER_DEBUG
-			if(Time.frameCount == 120)
+			if(Input.GetKeyDown(KeyCode.F10))
 				WaterDebug.WriteAllMaps(this);
 #endif
 		}
@@ -709,8 +894,16 @@ namespace PlayWay.Water
 		{
 			if(!isActiveAndEnabled) return;
 
-			foreach(var component in renderAwareComponents)
+			Vector2 surfaceOffset2d = SurfaceOffset;
+			Vector3 surfaceOffset = new Vector3(surfaceOffset2d.x, transform.position.y, surfaceOffset2d.y);
+			waterMaterial.SetVector(surfaceOffsetId, surfaceOffset);
+			waterBackMaterial.SetVector(surfaceOffsetId, surfaceOffset);
+			waterVolumeMaterial.SetVector(surfaceOffsetId, surfaceOffset);
+
+			for(int i = 0; i < renderAwareComponents.Length; ++i)
 			{
+				var component = renderAwareComponents[i];
+
 				if(((MonoBehaviour)component) != null && ((MonoBehaviour)component).enabled)
 					component.OnWaterRender(camera);
 			}
@@ -718,61 +911,56 @@ namespace PlayWay.Water
 
 		public void OnWaterPostRender(Camera camera)
 		{
-			foreach(var component in renderAwareComponents)
+			for(int i=0; i<renderAwareComponents.Length; ++i)
 			{
-				if(((MonoBehaviour)component) != null && ((MonoBehaviour)component).enabled)
+				var component = renderAwareComponents[i];
+
+                if(((MonoBehaviour)component) != null && ((MonoBehaviour)component).enabled)
 					component.OnWaterPostRender(camera);
 			}
 		}
 
-		private void UpdateDepthColor()
+		internal void OnSamplingStarted()
 		{
-			switch(RenderSettings.ambientMode)
-			{
-				case AmbientMode.Flat:
-				{
-					waterMaterial.SetColor("_DepthColor", maxDepthColor * RenderSettings.ambientLight * RenderSettings.ambientIntensity);
-					break;
-				}
+			++activeSamplesCount;
+		}
 
-				case AmbientMode.Trilight:
-				{
-					waterMaterial.SetColor("_DepthColor", maxDepthColor * (RenderSettings.ambientSkyColor + RenderSettings.ambientEquatorColor) * 0.5f * RenderSettings.ambientIntensity);
-					break;
-				}
-			}
+		internal void OnSamplingStopped()
+		{
+			--activeSamplesCount;
 		}
 
 		private void AddDefaultComponents()
 		{
 			if(GetComponent<WaterPlanarReflection>() == null)
 				gameObject.AddComponent<WaterPlanarReflection>();
-			
-			if(GetComponent<WaterWavesFFT>() == null)
-				gameObject.AddComponent<WaterWavesFFT>();
 
-			if(GetComponent<WaterWavesGerstner>() == null)
-			{
-				var gerstnerWaves = gameObject.AddComponent<WaterWavesGerstner>();
-				gerstnerWaves.enabled = false;
-			}
+			if(GetComponent<WindWaves>() == null)
+				gameObject.AddComponent<WindWaves>();
 
 			if(GetComponent<WaterFoam>() == null)
 				gameObject.AddComponent<WaterFoam>();
-
-			if(GetComponent<WaterSpray>() == null)
-				gameObject.AddComponent<WaterSpray>();
 		}
 
 		private bool IsNotCopied()
 		{
 #if UNITY_EDITOR
+#if UNITY_5_2 || UNITY_5_1 || UNITY_5_0
 			if(string.IsNullOrEmpty(UnityEditor.EditorApplication.currentScene))
+#else
+			if(!gameObject.scene.path.StartsWith("Assets"))         // check if that's not a temporary scene used for a build
+#endif
 				return true;
 
+#if UNITY_5_2 || UNITY_5_1 || UNITY_5_0
+			string sceneName = UnityEditor.EditorApplication.currentScene + "#" + name;
+#else
+			string sceneName = gameObject.scene.name;
+#endif
+
 			var md5 = System.Security.Cryptography.MD5.Create();
-			var hash = md5.ComputeHash(System.Text.Encoding.ASCII.GetBytes(UnityEditor.EditorApplication.currentScene + "#" + name));
-			return instanceId == GetInstanceID() || namesHash == System.BitConverter.ToInt32(hash, 0);
+			var hash = md5.ComputeHash(System.Text.Encoding.ASCII.GetBytes(sceneName));
+			return instanceId == GetInstanceID() || sceneHash == System.BitConverter.ToInt32(hash, 0);
 #else
 			return true;
 #endif
@@ -786,12 +974,6 @@ namespace PlayWay.Water
 
 		private void FireEvents()
 		{
-			if(lastWindDirection != WindDirection)
-			{
-				lastWindDirection = WindDirection;
-				windDirectionChanged.Invoke(this);
-			}
-
 			if(profilesDirty)
 			{
 				profilesDirty = false;
@@ -801,15 +983,7 @@ namespace PlayWay.Water
 
 		void OnProfilesChanged(Water water)
 		{
-			spectraRenderer.OnProfilesChanged();
-			waterMaterial.SetFloat("_MaxDisplacement", spectraRenderer.MaxDisplacement);
-
 			ResolveProfileData(profiles);
-		}
-
-		void OnWindDirectionChanged(Water water)
-		{
-			spectraRenderer.SetWindDirection(water.WindDirection);
 		}
 
 		private void ValidateProfiles(WeightedProfile[] profiles)
@@ -834,115 +1008,168 @@ namespace PlayWay.Water
 			if(parameterHashes != null)
 				return;
 
-			int numParameters = parameterNames.Length;
-            parameterHashes = new int[numParameters];
+			surfaceOffsetId = Shader.PropertyToID("_SurfaceOffset");
 
-			for(int i=0; i<numParameters; ++i)
+			int numParameters = parameterNames.Length;
+			parameterHashes = new int[numParameters];
+
+			for(int i = 0; i < numParameters; ++i)
 				parameterHashes[i] = Shader.PropertyToID(parameterNames[i]);
 		}
 
-		private void BuildShaderVariant(Material material, WaterQualityLevel qualityLevel)
+		private void BuildShaderVariant(ShaderVariant variant, WaterQualityLevel qualityLevel)
 		{
-			if(renderer == null)
+			if(renderAwareComponents == null)
 				return;             // still not properly initialized
 
-			var originalWaterMaterial = this.waterMaterial;
-            this.waterMaterial = material;
+			bool blendEdges = this.blendEdges && qualityLevel.allowAlphaBlending;
+			bool refraction = this.refraction && qualityLevel.allowAlphaBlending;
+			bool alphaBlend = (refraction || blendEdges);
 
-			try
-			{
-				bool blendEdges = this.blendEdges && qualityLevel.allowAlphaBlending;
-				bool refraction = this.refraction && qualityLevel.allowAlphaBlending;
+			for(int i = 0; i < renderAwareComponents.Length; ++i)
+				renderAwareComponents[i].BuildShaderVariant(variant, this, qualityLevel);
 
-				foreach(var component in renderAwareComponents)
-					component.ValidateNow(this, qualityLevel);
+			variant.SetWaterKeyword("_WATER_REFRACTION", refraction);
+			variant.SetWaterKeyword("_VOLUMETRIC_LIGHTING", volumetricLighting && qualityLevel.allowVolumetricLighting);
+			variant.SetWaterKeyword("_CUBEMAP_REFLECTIONS", useCubemapReflections);
+			variant.SetWaterKeyword("_NORMALMAP", waterMaterial.GetTexture("_BumpMap") != null);
 
-				// clear after non-existing components; not sure if that's needed but..
-				var waterFFT = GetComponent<WaterWavesFFT>();
+			//variant.SetWaterKeyword("_ALPHATEST_ON", false);
+			variant.SetWaterKeyword("_ALPHABLEND_ON", alphaBlend);
+			variant.SetWaterKeyword("_ALPHAPREMULTIPLY_ON", !alphaBlend);
 
-				if(waterFFT == null)
-				{
-					SetKeyword("_FFT_WAVES", false);
-					SetKeyword("_FFT_WAVES_SLOPE", false);
-				}
+			variant.SetUnityKeyword("_BOUNDED_WATER", !volume.Boundless && volume.HasAdditiveVolumes);
+			variant.SetUnityKeyword("_TRIANGLES", geometry.Triangular);
+		}
 
-				var gerstnerWaves = GetComponent<WaterWavesGerstner>();
+		private void UpdateMaterials()
+		{
+			var qualityLevel = WaterQualitySettings.Instance.CurrentQualityLevel;
 
-				if(gerstnerWaves == null)
-					SetKeyword("_GERSTNER_WAVES", false);
+			for(int i = 0; i < renderAwareComponents.Length; ++i)
+				renderAwareComponents[i].UpdateMaterial(this, qualityLevel);
 
-				var waterOverlays = GetComponent<WaterWaveOverlays>();
+			bool blendEdges = this.blendEdges && qualityLevel.allowAlphaBlending;
+			bool refraction = this.refraction && qualityLevel.allowAlphaBlending;
+			bool alphaBlend = (refraction || blendEdges);
 
-				if(waterOverlays == null)
-					SetKeyword("_WATER_OVERLAYS", false);
+			waterMaterial.SetFloat("_Cull", 2);
 
-				var planarReflections = GetComponent<WaterPlanarReflection>();
+			waterMaterial.SetOverrideTag("RenderType", alphaBlend ? "Transparent" : "Opaque");
+			waterMaterial.SetFloat("_Mode", alphaBlend ? 2 : 0);
+			waterMaterial.SetInt("_SrcBlend", (int)(alphaBlend ? BlendMode.SrcAlpha : BlendMode.One));
+			waterMaterial.SetInt("_DstBlend", (int)(alphaBlend ? BlendMode.OneMinusSrcAlpha : BlendMode.Zero));
 
-				if(planarReflections == null)
-					SetKeyword("_PLANAR_REFLECTIONS", false);
+			waterMaterial.renderQueue = alphaBlend ? 2990 : 2000;       // 2000 - geometry, 3000 - transparent
 
-				SetKeyword("_WATER_REFRACTION", refraction);
-				SetKeyword("_VOLUMETRIC_LIGHTING", volumetricLighting && qualityLevel.allowVolumetricLighting);
-				SetKeyword("_CUBEMAP_REFLECTIONS", useCubemapReflections);
-				SetKeyword("_INCLUDE_SLOPE_VARIANCE", waterPrecompute.Enabled);
-				SetKeyword("_NORMALMAP", waterMaterial.GetTexture("_BumpMap") != null);
-
-				// clean after components not executing in edit mode
-				var waterFoam = GetComponent<WaterFoam>();
-				if(waterFoam == null || !waterFoam.enabled)
-				{
-					SetKeyword("_WATER_FOAM_LOCAL", false);
-					SetKeyword("_WATER_FOAM_WS", false);
-				}
-				else
-					waterFoam.SetupMaterials();
-
-				bool alphaBlend = (refraction || blendEdges);
-
-				waterMaterial.SetOverrideTag("RenderType", alphaBlend ? "Transparent" : "Opaque");
-				waterMaterial.SetFloat("_Mode", alphaBlend ? 2 : 0);
-				waterMaterial.SetInt("_SrcBlend", (int)(alphaBlend ? BlendMode.SrcAlpha : BlendMode.One));
-				waterMaterial.SetInt("_DstBlend", (int)(alphaBlend ? BlendMode.OneMinusSrcAlpha : BlendMode.Zero));
-				SetKeyword("_ALPHATEST_ON", false);
-				SetKeyword("_ALPHABLEND_ON", alphaBlend);
-				SetKeyword("_ALPHAPREMULTIPLY_ON", !alphaBlend);
-				waterMaterial.renderQueue = alphaBlend ? 2990 : 2000;       // 2000 - geometry, 3000 - transparent
-
-				SetKeyword("_QUADS", !geometry.Triangular);
-
-				waterMaterial.SetFloat("_TesselationFactor", Mathf.Lerp(32.0f, 6.0f, Mathf.Min(tesselationFactor, qualityLevel.maxTesselationFactor)));
-				UpdateWaterVolumeMaterial();
-			}
-			finally
-			{
-				this.waterMaterial = originalWaterMaterial;
-			}
+			float maxTesselationFactor = Mathf.Sqrt(2000000.0f / geometry.TesselatedBaseVertexCount);
+			waterMaterial.SetFloat("_TesselationFactor", Mathf.Lerp(1.0f, maxTesselationFactor, Mathf.Min(tesselationFactor, qualityLevel.maxTesselationFactor)));
 		}
 
 		private void AddShaderVariants(ShaderCollection collection)
 		{
-			var material = Instantiate(waterMaterial);
+			var qualityLevels = WaterQualitySettings.Instance.GetQualityLevelsDirect();
 
-			foreach(var qualityLevel in WaterQualitySettings.Instance.GetQualityLevelsDirect())
+            for(int i=0; i<qualityLevels.Length; ++i)
 			{
-				BuildShaderVariant(material, qualityLevel);
+				SetProgress((float)i / qualityLevels.Length);
 
-				collection.AddShaderVariant(material.shader, material.shaderKeywords);
+				var qualityLevel = qualityLevels[i];
+
+				var variant = new ShaderVariant();
+
+				// main shader
+				BuildShaderVariant(variant, qualityLevel);
+
+				collection.GetShaderVariant(variant.GetWaterKeywords(), variant.GetUnityKeywords(), variant.GetKeywordsString(), false);
+
+				AddFallbackVariants(variant, collection, false, 0);
+
+				SetProgress((i + 0.5f) / qualityLevels.Length);
+
+				// volume shader
+				foreach(string keyword in disallowedVolumeKeywords)
+					variant.SetWaterKeyword(keyword, false);
+
+				collection.GetShaderVariant(variant.GetWaterKeywords(), variant.GetUnityKeywords(), variant.GetKeywordsString(), true);
+
+				AddFallbackVariants(variant, collection, true, 0);
 			}
 
-			DestroyImmediate(material);
+			SetProgress(1.0f);
+		}
+
+		private void SetProgress(float progress)
+		{
+#if UNITY_EDITOR
+			if(progress != 1.0f)
+				UnityEditor.EditorUtility.DisplayProgressBar("Building water shaders...", "This may take a minute.", progress);
+			else
+				UnityEditor.EditorUtility.ClearProgressBar();
+#endif
+		}
+
+		private void AddFallbackVariants(ShaderVariant variant, ShaderCollection collection, bool volume, int index)
+		{
+			if(index < hardwareDependentKeywords.Length)
+			{
+				string keyword = hardwareDependentKeywords[index];
+
+				AddFallbackVariants(variant, collection, volume, index + 1);
+
+				if(variant.IsWaterKeywordEnabled(keyword))
+				{
+					variant.SetWaterKeyword(keyword, false);
+					AddFallbackVariants(variant, collection, volume, index + 1);
+					variant.SetWaterKeyword(keyword, true);
+				}
+			}
+			else
+			{
+				collection.GetShaderVariant(variant.GetWaterKeywords(), variant.GetUnityKeywords(), variant.GetKeywordsString(), volume);
+			}
+		}
+
+		private void CreateWaterManagers()
+		{
+			if(uvAnimator == null)
+				uvAnimator = new WaterUvAnimator();
+
+			if(volume == null)
+				volume = new WaterVolume();
+
+			if(geometry == null)
+				geometry = new WaterGeometry();
+
+			if(waterRenderer == null)
+				waterRenderer = new WaterRenderer();
+
+			if(profilesChanged == null)
+				profilesChanged = new WaterEvent();
 		}
 
 		public void Write(ShaderCollection collection)
 		{
-			if(collection == shaderCollection)
-			{
-				if(waterMaterial != null)
-					AddShaderVariants(collection);
+			if(collection == shaderCollection && waterMaterial != null)
+				AddShaderVariants(collection);
+		}
 
-				if(waterVolumeMaterial != null)
-					collection.AddShaderVariant(waterVolumeMaterial.shader, waterVolumeMaterial.shaderKeywords);
+		private void UpdateStatisticalData()
+		{
+			maxHorizontalDisplacement = 0.0f;
+			maxVerticalDisplacement = 0.0f;
+
+			for(int i=0; i<displacingComponents.Length; ++i)
+			{
+				maxHorizontalDisplacement += displacingComponents[i].MaxHorizontalDisplacement;
+				maxVerticalDisplacement += displacingComponents[i].MaxVerticalDisplacement;
 			}
+		}
+
+		[ContextMenu("Print Used Keywords")]
+		protected void PrintUsedKeywords()
+		{
+			Debug.Log(waterMaterial.shader.name);
 		}
 
 		[System.Serializable]
@@ -990,35 +1217,43 @@ namespace PlayWay.Water
 			DiffuseColor = 1,
 			SpecularColor = 2,
 			DepthColor = 3,
-			EmissionColor = 4
+			EmissionColor = 4,
+			ReflectionColor = 5
 		}
 
 		public enum FloatParameters
 		{
-			DisplacementScale = 5,
-			Glossiness = 6,
-			RefractionDistortion = 9,
-			SpecularFresnelBias = 10,
-			DisplacementNormalsIntensity = 12,
-			EdgeBlendFactorInv = 13,
-			WaterTileSize = 17
+			DisplacementScale = 6,
+			Glossiness = 7,
+			RefractionDistortion = 10,
+			SpecularFresnelBias = 11,
+			DisplacementNormalsIntensity = 13,
+			EdgeBlendFactorInv = 14,
+			LightSmoothnessMultiplier = 18
 		}
 
 		public enum VectorParameters
 		{
-			SubsurfaceScatteringPack = 7,
-			WrapSubsurfaceScatteringPack = 8,
-			DistantFadeFactors = 11,
-			PlanarReflectionPack = 14,
-			BumpScale = 15,
-			FoamTiling = 16
+			SubsurfaceScatteringPack = 8,
+			WrapSubsurfaceScatteringPack = 9,
+			DetailFadeFactor = 12,
+			PlanarReflectionPack = 15,
+			BumpScale = 16,
+			FoamTiling = 17
 		}
 
 		public enum TextureParameters
 		{
-			BumpMap = 18,
-			FoamTex = 19,
-			FoamNormalMap = 20
+			BumpMap = 19,
+			FoamTex = 20,
+			FoamNormalMap = 21
+		}
+
+		public enum LaunchState
+		{
+			Disabled,
+			Started,
+			Ready
 		}
 	}
 }

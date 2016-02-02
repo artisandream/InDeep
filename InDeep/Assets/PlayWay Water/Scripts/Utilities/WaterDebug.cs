@@ -7,16 +7,22 @@ namespace PlayWay.Water
 		static public void WriteAllMaps(Water water)
 		{
 #if DEBUG && WATER_DEBUG
-			var wavesFFT = water.GetComponent<WaterWavesFFT>();
-			SaveTexture(wavesFFT.HeightMap, "PlayWay Water - FFT Height Map.png");
-			SaveTexture(wavesFFT.SlopeMap, "PlayWay Water - FFT Slope Map.png");
-			SaveTexture(wavesFFT.DisplacementMap, "PlayWay Water - FFT Displacement Map.png");
+			var windWaves = water.GetComponent<WindWaves>();
+            var wavesFFT = windWaves.WaterWavesFFT;
+			SaveTexture(wavesFFT.GetDisplacementMap(0), "PlayWay Water - FFT Height Map 0.png");
+			SaveTexture(wavesFFT.GetSlopeMap(0), "PlayWay Water - FFT Slope Map 0.png");
+			SaveTexture(wavesFFT.GetDisplacementMap(1), "PlayWay Water - FFT Height Map 1.png");
+			SaveTexture(wavesFFT.GetSlopeMap(1), "PlayWay Water - FFT Slope Map 1.png");
+			SaveTexture(wavesFFT.GetDisplacementMap(2), "PlayWay Water - FFT Height Map 2.png");
+			SaveTexture(wavesFFT.GetDisplacementMap(3), "PlayWay Water - FFT Height Map 3.png");
 
-			SaveTexture(water.SpectraRenderer.GetSpectrum(SpectraRenderer.SpectrumType.RawOmnidirectional), "PlayWay Water - Spectrum Raw Omnidirectional.png");
-			SaveTexture(water.SpectraRenderer.GetSpectrum(SpectraRenderer.SpectrumType.RawDirectional), "PlayWay Water - Spectrum Raw Directional.png");
-			SaveTexture(water.SpectraRenderer.GetSpectrum(SpectraRenderer.SpectrumType.Height), "PlayWay Water - Spectrum Height.png");
-			SaveTexture(water.SpectraRenderer.GetSpectrum(SpectraRenderer.SpectrumType.Slope), "PlayWay Water - Spectrum Slope.png");
-			SaveTexture(water.SpectraRenderer.GetSpectrum(SpectraRenderer.SpectrumType.Displacement), "PlayWay Water - Spectrum Displacement.png");
+			SaveTexture(windWaves.SpectrumResolver.RenderHeightSpectrumAt(Time.time), "PlayWay Water - Timed Height Spectrum.png");
+
+			SaveTexture(windWaves.SpectrumResolver.GetSpectrum(SpectrumResolver.SpectrumType.RawOmnidirectional), "PlayWay Water - Spectrum Raw Omnidirectional.png");
+			SaveTexture(windWaves.SpectrumResolver.GetSpectrum(SpectrumResolver.SpectrumType.RawDirectional), "PlayWay Water - Spectrum Raw Directional.png");
+			SaveTexture(windWaves.SpectrumResolver.GetSpectrum(SpectrumResolver.SpectrumType.Height), "PlayWay Water - Spectrum Height.png");
+			SaveTexture(windWaves.SpectrumResolver.GetSpectrum(SpectrumResolver.SpectrumType.Slope), "PlayWay Water - Spectrum Slope.png");
+			SaveTexture(windWaves.SpectrumResolver.GetSpectrum(SpectrumResolver.SpectrumType.Displacement), "PlayWay Water - Spectrum Displacement.png");
 #endif
 		}
 
@@ -26,8 +32,14 @@ namespace PlayWay.Water
 			if(tex == null)
 				return;
 
+			var shader = Shader.Find("PlayWay Water/Editor/Inspect Texture");
+			var material = new Material(shader);
+			material.SetVector("_RangeR", new Vector2(0.0f, 0.1f));
+			material.SetVector("_RangeG", new Vector2(0.0f, 0.1f));
+			material.SetVector("_RangeB", new Vector2(0.0f, 0.1f));
+
 			var tempRT = new RenderTexture(tex.width, tex.height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear);
-			Graphics.Blit(tex, tempRT);
+			Graphics.Blit(tex, tempRT, material);
 
 			RenderTexture.active = tempRT;
 

@@ -6,7 +6,7 @@ namespace PlayWay.Water
 	{
 		private RenderTexture renderTexture;
 		private RenderTexturesCache renderTexturesCache;
-
+		
 		internal TemporaryRenderTexture(RenderTexturesCache renderTexturesCache)
 		{
 			this.renderTexturesCache = renderTexturesCache;
@@ -20,8 +20,12 @@ namespace PlayWay.Water
 
 		public void Dispose()
 		{
-			renderTexturesCache.ReleaseTemporaryDirect(renderTexture);
-		}
+			if(renderTexture != null)
+			{
+				renderTexturesCache.ReleaseTemporaryDirect(renderTexture);
+				renderTexture = null;
+			}
+        }
 
 		static public implicit operator RenderTexture(TemporaryRenderTexture that)
 		{

@@ -1,11 +1,10 @@
-﻿
+﻿using UnityEngine;
+
 namespace PlayWay.Water
 {
-	/// <summary>
-	/// A class that adds stuff to shader collection during its building process.
-	/// </summary>
 	public interface IShaderCollectionBuilder
 	{
-		void Write(ShaderCollection collection);
+		Shader BuildShaderVariant(string[] localKeywords, string[] sharedKeywords, string keywordsString, bool volume);
+		void BuildSceneShaderCollection(ShaderCollection shaderCollection);
 	}
 }

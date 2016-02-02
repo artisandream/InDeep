@@ -1,144 +1,102 @@
-﻿using UnityEngine;
+﻿using System;
+using UnityEngine;
 
 namespace PlayWay.Water
 {
 	[RequireComponent(typeof(Water))]
-	[RequireComponent(typeof(WaterWavesFFT))]
+	[RequireComponent(typeof(WindWaves))]
 	[AddComponentMenu("Water/Foam", 1)]
-	public class WaterFoam : MonoBehaviour
+	public class WaterFoam : MonoBehaviour, IWaterRenderAware
 	{
 		[HideInInspector]
 		[SerializeField]
-		private Shader localFoamShader;
-
-		[HideInInspector]
-		[SerializeField]
-		private Shader globalFoamShader;
-
-		[HideInInspector]
-		[SerializeField]
-		private bool simulateLocalFoam;
-
-		[SerializeField]
-		private bool simulateGlobalFoam = true;
-
+		private Shader foamSimulationShader;
+		
 		[Tooltip("Foam map supersampling in relation to the waves simulator resolution. Has to be a power of two (0.25, 0.5, 1, 2, etc.)")]
 		[SerializeField]
-		private float supersampling = 1.0f;
+		private float supersampling = 2.0f;
 
-		[SerializeField]
-		private float foamIntensity = 0.03f;
+		private float foamIntensity = 1.0f;
+		private float foamThreshold = 1.0f;
+		private float foamFadingFactor = 0.85f;
 
-		[Range(0.0f, 2.5f)]
-		[SerializeField]
-		private float foamBoost = 1.0f;
-
-		[Tooltip("Optimized for 1 and 2.")]
-		[SerializeField]
-		private float foamPower = 1.0f;
-
-		[Tooltip("Determines how fast foam will fade out.")]
-		[Range(0.0f, 1.0f)]
-		[SerializeField]
-		private float foamFadingFactor = 0.0f;
-
-		[SerializeField]
-		private Blur foamBlur;
-
-		private RenderTexture localFoamMapA;
-		private RenderTexture localFoamMapB;
-
-		private RenderTexture globalFoamMapA;
-		private RenderTexture globalFoamMapB;
-
-		private Material localFoamMaterial;
-		private Material globalFoamMaterial;
-		
+		private RenderTexture foamMapA;
+		private RenderTexture foamMapB;
+		private Material foamSimulationMaterial;
 		private Vector2 lastCameraPos;
 		private Vector2 deltaPosition;
-
-		private float initialBlurSize;
-
 		private Water water;
-		private WaterWavesFFT wavesSimulation;
-
+		private WindWaves windWaves;
 		private int resolution;
-
 		private bool firstFrame;
+
+		private int foamParametersId;
+		private int foamIntensityId;
 
 		void Start()
 		{
 			water = GetComponent<Water>();
-			wavesSimulation = GetComponent<WaterWavesFFT>();
+			windWaves = GetComponent<WindWaves>();
 
-			water.SpectraRenderer.ResolutionChanged += OnResolutionChanged;
+			foamParametersId = Shader.PropertyToID("_FoamParameters");
+			foamIntensityId = Shader.PropertyToID("_FoamIntensity");
 
-			resolution = Mathf.RoundToInt(water.SpectraRenderer.FinalResolution * supersampling);
-			initialBlurSize = foamBlur.Size;
+			windWaves.ResolutionChanged.AddListener(OnResolutionChanged);
 
-			localFoamMaterial = new Material(localFoamShader);
-			globalFoamMaterial = new Material(globalFoamShader);
+			resolution = Mathf.RoundToInt(windWaves.FinalResolution * supersampling);
+			
+			foamSimulationMaterial = new Material(foamSimulationShader);
+			foamSimulationMaterial.hideFlags = HideFlags.DontSave;
 
 			firstFrame = true;
-			
-			SetupMaterials();
-
-			water.WindDirectionChanged.AddListener(OnWindChanged);
-			OnWindChanged(water);
 		}
 
-		private void OnResolutionChanged()
+		void OnEnable()
 		{
-			resolution = Mathf.RoundToInt(water.SpectraRenderer.FinalResolution * supersampling);
-
-			Dispose(false);
-		}
-
-		public RenderTexture LocalFoamMap
-		{
-			get { return localFoamMapA; }
-		}
-
-		public RenderTexture GlobalFoamMap
-		{
-			get { return globalFoamMapA; }
-		}
+			water = GetComponent<Water>();
+			water.ProfilesChanged.AddListener(OnProfilesChanged);
+			OnProfilesChanged(water);
+        }
 
 		void OnDisable()
 		{
-			water.SetKeyword("_WATER_FOAM_LOCAL", false);
-			water.SetKeyword("_WATER_FOAM_WS", false);
+			water.InvalidateMaterialKeywords();
+			water.ProfilesChanged.RemoveListener(OnProfilesChanged);
 		}
 
-		void OnWindChanged(Water water)
+		public Texture FoamMap
 		{
-			Vector2 windSpeed = water.WindSpeed;
-			Vector2 dir = windSpeed.normalized;
-			localFoamMaterial.SetVector("_SampleDir1", new Vector4(dir.x * 0.02f, dir.y * 0.02f, windSpeed.x, windSpeed.y));
+			get { return foamMapA; }
 		}
 
-		public void SetupMaterials()
+		public void OnWaterRender(Camera camera)
 		{
-			water = GetComponent<Water>();
-			water.SetKeyword("_WATER_FOAM_LOCAL", simulateLocalFoam);
-			water.SetKeyword("_WATER_FOAM_WS", simulateGlobalFoam);
+
+		}
+
+		public void OnWaterPostRender(Camera camera)
+		{
+
+		}
+
+		public void BuildShaderVariant(ShaderVariant variant, Water water, WaterQualityLevel qualityLevel)
+		{
+			variant.SetWaterKeyword("_WATER_FOAM_WS", enabled && CheckPreresquisites());
+		}
+
+		public void UpdateMaterial(Water water, WaterQualityLevel qualityLevel)
+		{
+
 		}
 
 		private void SetupFoamMaterials()
 		{
-			/*if(localFoamMaterial != null)
+			if(foamSimulationMaterial != null)
 			{
-				SetKeyword(localFoamMaterial, foamPower == 1.0f ? 0 : (foamPower == 2.0f ? 1 : 2), "FOAM_POW_1", "FOAM_POW_2", "FOAM_POW_N");
-
-				localFoamMaterial.SetVector("_FoamParameters", new Vector4(foamIntensity * foamPower * foamPower, water.HorizontalDisplacementScale * foamBoost * resolution / 2048.0f * 220.0f / water.TileSize, foamPower, foamFadingFactor));
-			}*/
-
-			if(globalFoamMaterial != null)
-			{
-				SetKeyword(globalFoamMaterial, foamPower == 1.0f ? 0 : (foamPower == 2.0f ? 1 : 2), "FOAM_POW_1", "FOAM_POW_2", "FOAM_POW_N");
-
-				globalFoamMaterial.SetVector("_FoamParameters", new Vector4(foamIntensity * foamPower * foamPower, water.HorizontalDisplacementScale * foamBoost * resolution / 2048.0f * 220.0f / water.TileSize, foamPower, foamFadingFactor));
-			}
+				float t = foamThreshold * resolution / 2048.0f * 220.0f * 0.7f;
+				foamSimulationMaterial.SetVector(foamParametersId, new Vector4(foamIntensity * 0.6f, 0.0f, 0.0f, foamFadingFactor));
+				foamSimulationMaterial.SetVector(foamIntensityId, new Vector4(t / windWaves.TileSizes.x, t / windWaves.TileSizes.y, t / windWaves.TileSizes.z, t / windWaves.TileSizes.w));
+            }
 		}
 
 		private void SetKeyword(Material material, string name, bool val)
@@ -159,43 +117,25 @@ namespace PlayWay.Water
 
 		void OnValidate()
 		{
-			if(localFoamShader == null)
-				localFoamShader = Shader.Find("PlayWay Water/Foam/Local");
-
-			if(globalFoamShader == null)
-				globalFoamShader = Shader.Find("PlayWay Water/Foam/Global");
-
-			foamBlur.Validate("PlayWay Water/Utilities/Blur");
-
+			if(foamSimulationShader == null)
+				foamSimulationShader = Shader.Find("PlayWay Water/Foam/Global");
+			
 			supersampling = Mathf.ClosestPowerOfTwo(Mathf.RoundToInt(supersampling * 4096)) / 4096.0f;
 
 			water = GetComponent<Water>();
-			wavesSimulation = GetComponent<WaterWavesFFT>();
-			SetupMaterials();
+			windWaves = GetComponent<WindWaves>();
         }
 		
 		private void Dispose(bool completely)
 		{
-			if(localFoamMapA != null)
+			if(foamMapA != null)
 			{
-				Destroy(localFoamMapA);
-				Destroy(localFoamMapB);
+				Destroy(foamMapA);
+				Destroy(foamMapB);
 
-				localFoamMapA = null;
-				localFoamMapB = null;
+				foamMapA = null;
+				foamMapB = null;
 			}
-
-			if(globalFoamMapA != null)
-			{
-				Destroy(globalFoamMapA);
-				Destroy(globalFoamMapB);
-
-				globalFoamMapA = null;
-				globalFoamMapB = null;
-			}
-
-			if(completely && foamBlur != null)
-				foamBlur.Dispose();
 		}
 
 		void OnDestroy()
@@ -215,32 +155,15 @@ namespace PlayWay.Water
 
 		private void CheckResources()
 		{
-			/*if(simulateLocalFoam && localFoamMapA == null)
+			if(foamMapA == null)
 			{
-				localFoamMapA = CreateRT(0, RenderTextureFormat.RHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Clamp);
-				localFoamMapB = CreateRT(0, RenderTextureFormat.RHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Clamp);
+				foamMapA = CreateRT(0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Repeat);
+				foamMapB = CreateRT(0, RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Repeat);
 
-				ClearTexture(localFoamMapA, Color.black);
-				ClearTexture(localFoamMapB, Color.black);
-			}*/
-
-			if(simulateGlobalFoam && globalFoamMapA == null)
-			{
-				globalFoamMapA = CreateRT(0, RenderTextureFormat.RHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Repeat);
-				globalFoamMapB = CreateRT(0, RenderTextureFormat.RHalf, RenderTextureReadWrite.Linear, FilterMode.Trilinear, TextureWrapMode.Repeat);
-				
-				ClearTexture(globalFoamMapA, Color.black);
-				ClearTexture(globalFoamMapB, Color.black);
+				RenderTexture.active = null;
 			}
 		}
-
-		private void ClearTexture(RenderTexture tex, Color color)
-		{
-			RenderTexture.active = tex;
-			GL.Clear(false, true, color);
-			RenderTexture.active = null;
-		}
-
+		
 		private RenderTexture CreateRT(int depth, RenderTextureFormat format, RenderTextureReadWrite readWrite, FilterMode filterMode, TextureWrapMode wrapMode)
 		{
 			var renderTexture = new RenderTexture(resolution, resolution, depth, format, readWrite);
@@ -249,48 +172,61 @@ namespace PlayWay.Water
 			renderTexture.wrapMode = wrapMode;
 			renderTexture.useMipMap = true;
 			renderTexture.generateMips = true;
-			
+
+			RenderTexture.active = renderTexture;
+			GL.Clear(false, true, new Color(0.0f, 0.0f, 0.0f, 0.0f));
+
 			return renderTexture;
 		}
-		
+
 		private void UpdateFoamMap()
 		{
+			if(!CheckPreresquisites())
+				return;
+
 			CheckResources();
 			SetupFoamMaterials();
+			
+			foamSimulationMaterial.SetTexture("_DisplacementMap0", windWaves.WaterWavesFFT.GetDisplacementMap(0));
+			foamSimulationMaterial.SetTexture("_DisplacementMap1", windWaves.WaterWavesFFT.GetDisplacementMap(1));
+			foamSimulationMaterial.SetTexture("_DisplacementMap2", windWaves.WaterWavesFFT.GetDisplacementMap(2));
+			foamSimulationMaterial.SetTexture("_DisplacementMap3", windWaves.WaterWavesFFT.GetDisplacementMap(3));
+			Graphics.Blit(foamMapA, foamMapB, foamSimulationMaterial, 0);
 
-			/*if(simulateLocalFoam)
+			water.WaterMaterial.SetTexture("_FoamMapWS", foamMapB);
+		}
+
+		private void OnResolutionChanged(WindWaves windWaves)
+		{
+			resolution = Mathf.RoundToInt(windWaves.FinalResolution * supersampling);
+
+			Dispose(false);
+		}
+
+		private bool CheckPreresquisites()
+		{
+			return windWaves != null && windWaves.enabled && windWaves.FinalRenderMode == WaveSpectrumRenderMode.FullFFT;
+		}
+
+		private void OnProfilesChanged(Water water)
+		{
+			var profiles = water.Profiles;
+
+			foamIntensity = 0.0f;
+			foamThreshold = 0.0f;
+			foamFadingFactor = 0.0f;
+
+			if(profiles != null)
 			{
-				Vector3 centerPos = Camera.main.transform.position;
-				Vector2 minPos = new Vector2(
-					(centerPos.x - realSize * 0.5f),
-					(centerPos.z - realSize * 0.5f)
-				);
+				foreach(var weightedProfile in profiles)
+				{
+					var profile = weightedProfile.profile;
+					float weight = weightedProfile.weight;
 
-				localFoamMaterial.SetTexture("_DistortionMapB", wavesSimulation.DisplacementMap);
-				localFoamMaterial.SetVector("_DistortionMapCoords", new Vector4(minPos.x, minPos.y, 1.0f / water.TileSize, realSize));
-
-				localFoamMaterial.SetFloat("_DisplacementsScale", water.WaterMaterial.GetFloat("_DisplacementsScale"));
-
-				localFoamMaterial.SetVector("_DeltaPosition", new Vector2(-deltaPosition.x / realSize, deltaPosition.y / realSize));
-				Graphics.Blit(localFoamMapA, localFoamMapB, localFoamMaterial, 0);
-
-				foamBlur.Size = initialBlurSize * Time.deltaTime;
-				foamBlur.Apply(localFoamMapB);
-
-				water.WaterMaterial.SetTexture("_FoamMap", localFoamMapB);
-				water.WaterMaterial.SetVector("_FoamMapDimensions", new Vector4(-(lastCameraPos.x - realSize * 0.5f), -(lastCameraPos.y - realSize * 0.5f), 1.0f / realSize, 1.0f / realSize));
-			}*/
-
-			if(simulateGlobalFoam)
-			{
-				globalFoamMaterial.SetTexture("_DistortionMapB", wavesSimulation.DisplacementMap);
-				globalFoamMaterial.SetFloat("_DisplacementsScale", water.WaterMaterial.GetFloat("_DisplacementsScale"));
-				Graphics.Blit(globalFoamMapA, globalFoamMapB, globalFoamMaterial, 0);
-
-				foamBlur.Size = initialBlurSize * Time.deltaTime;
-				foamBlur.Apply(globalFoamMapB);
-
-				water.WaterMaterial.SetTexture("_FoamMapWS", globalFoamMapB);
+					foamIntensity += profile.FoamIntensity * weight;
+					foamThreshold += profile.FoamThreshold * weight;
+					foamFadingFactor += profile.FoamFadingFactor * weight;
+				}
 			}
 		}
 
@@ -304,13 +240,9 @@ namespace PlayWay.Water
 		
 		private void SwapRenderTargets()
 		{
-			var t = localFoamMapA;
-			localFoamMapA = localFoamMapB;
-			localFoamMapB = t;
-
-			t = globalFoamMapA;
-			globalFoamMapA = globalFoamMapB;
-			globalFoamMapB = t;
+			var t = foamMapA;
+			foamMapA = foamMapB;
+			foamMapB = t;
 		}
 	}
 }

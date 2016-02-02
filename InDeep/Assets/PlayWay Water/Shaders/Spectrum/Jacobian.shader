@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utility/Jacobian"
+Shader "PlayWay Water/Utility/Jacobian"
 {
 	Properties
 	{

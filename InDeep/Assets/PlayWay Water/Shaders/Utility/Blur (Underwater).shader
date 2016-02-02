@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/Blur (Underwater)"
+Shader "PlayWay Water/Utilities/Blur (Underwater)"
 {
 	Properties
 	{
@@ -67,8 +67,8 @@
 
 	half4 frag(VertexOutput vo) : SV_Target
 	{
-		half mask = tex2D(_UnderwaterMask, vo.uv3);
-
+		half mask = 1.0 - tex2D(_UnderwaterMask, vo.uv3);
+		
 		half4 color = 0;
 
 		AddSampleAt(vo.uv0, color, 0);

@@ -1,4 +1,4 @@
-﻿//
+//
 //	It's just a port for Unity of cool NoiseLib by Brian Sharpe originally written in glsl.
 //	Original copyright notice:
 // 

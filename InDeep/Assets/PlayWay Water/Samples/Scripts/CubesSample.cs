@@ -38,17 +38,7 @@ namespace PlayWay.WaterSamples
 
 				nextCubeSpawnTime = Time.time + 0.05f;
 			}
-
-			if(Input.GetKey(KeyCode.A))
-			{
-				Camera.main.transform.RotateAround(transform.position, Vector3.up, Time.deltaTime * 20.0f);
-			}
-
-			if(Input.GetKey(KeyCode.D))
-			{
-				Camera.main.transform.RotateAround(transform.position, Vector3.up, -Time.deltaTime * 20.0f);
-			}
-
+			
 			if(Time.time >= nextFpsUpdate)
 			{
 				int frameCount = Time.frameCount;

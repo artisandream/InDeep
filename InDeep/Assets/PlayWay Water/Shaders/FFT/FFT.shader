@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Base/FFT"
+Shader "PlayWay Water/Base/FFT"
 {
 	Properties
 	{
@@ -22,21 +22,9 @@
 		half2 uv	: TEXCOORD0;
 	};
 
-	/*struct MRTOutput
-	{
-		half2 height					: COLOR0;
-		half4 slope						: COLOR1;
-		half4 horizontalDisplacement	: COLOR2;
-	};*/
-
 	sampler2D _MainTex;
 	sampler2D _ButterflyTex;
 	half _ButterflyPass;
-	half _ScaleFactor;
-
-	//sampler2D _TexA;
-	//sampler2D _TexB;
-	//sampler2D _TexC;
 
 	VertexOutput vert (VertexInput vi)
 	{
@@ -53,27 +41,18 @@
 	///
 	inline float4 FFT_1(sampler2D tex, half2 uv1, half2 uv2, float2 weights)
 	{
-		float2 a1 = tex2D(tex, uv1).rg;
-		float2 b1 = tex2D(tex, uv2).rg;
+		float2 a1 = tex2D(tex, uv1).xy;
+		float2 b1 = tex2D(tex, uv2).xy;
 
-		float2 res;
-		res.r = weights.r*b1.r - weights.g*b1.g;
-		//res.g = weights.g*b1.r + weights.r*b1.g;
-		res.g = dot(weights.gr, b1.rg);
-
-		return float4(a1 + res, 0, 1);
+		return float4(a1 + weights.xy * b1.xx + weights.yx * float2(-1, 1) * b1.yy, 0, 1);
 	}
 
 	inline float4 FFT_2(sampler2D tex, half2 uv1, half2 uv2, float2 weights)
 	{
-		float4 a1 = tex2D(tex, uv1).rgba;
-		float4 b1 = tex2D(tex, uv2).rgba;
+		float4 a1 = tex2D(tex, uv1).xyzw;
+		float4 b1 = tex2D(tex, uv2).xyzw;
 
-		float4 res;
-		res.rb = weights.r*b1.rb - weights.g*b1.ga;
-		res.ga = weights.g*b1.rb + weights.r*b1.ga;
-
-		return a1 + res;
+		return a1 + weights.xyxy * b1.xxzz + weights.yxyx * float4(-1, 1, -1, 1) * b1.yyww;
 	}
 
 	///
@@ -142,47 +121,8 @@
 		half2 indices = butterfly.rg;
 		float2 weights = butterfly.ba;
 
-		return FFT_2(_MainTex, half2(In.uv.x, indices.x), half2(In.uv.x, indices.y), weights).rbrb;
+		return FFT_2(_MainTex, half2(In.uv.x, indices.x), half2(In.uv.x, indices.y), weights).rbbb;
 	}
-
-	///
-	/// Multiple Render Targets
-	///
-	/*MRTOutput hfft_mrt(VertexOutput In) : SV_Target
-	{
-		float4 butterfly = tex2D(_ButterflyTex, float2(In.uv.x, _ButterflyPass));
-  
-		float2 indices = butterfly.rg;
-		float2 weights = butterfly.ba;
-
-		float2 uv1 = float2(indices.x, In.uv.y);
-		float2 uv2 = float2(indices.y, In.uv.y);
-
-		MRTOutput o;
-		o.height = FFT_1(_TexA, uv1, uv2, weights);
-		o.slope = FFT_2(_TexB, uv1, uv2, weights);
-		o.horizontalDisplacement = FFT_2(_TexC, uv1, uv2, weights);
-
-		return o;
-	}
-
-	MRTOutput vfft_mrt(VertexOutput In) : SV_Target
-	{
-		float4 butterfly = tex2D(_ButterflyTex, float2(In.uv.y, _ButterflyPass));
-
-		float2 indices = butterfly.rg;
-		float2 weights = butterfly.ba;
-
-		float2 uv1 = float2(In.uv.x, indices.x);
-		float2 uv2 = float2(In.uv.x, indices.y);
-
-		MRTOutput o;
-		o.height = FFT_1(_TexA, uv1, uv2, weights);
-		o.slope = FFT_2(_TexB, uv1, uv2, weights);
-		o.horizontalDisplacement = FFT_2(_TexC, uv1, uv2, weights);
-
-		return o;
-	}*/
 
 	ENDCG
 
@@ -252,36 +192,6 @@
 
 			ENDCG
 		}
-
-		/*Pass
-		{
-			Name "hFFTmrt"
-			ColorMask RGBA
-
-			CGPROGRAM
-			
-			#pragma target 2.0
-
-			#pragma vertex vert
-			#pragma fragment hfft_mrt
-
-			ENDCG
-		}
-
-		Pass
-		{
-			Name "vFFTmrt"
-			ColorMask RGBA
-
-			CGPROGRAM
-			
-			#pragma target 2.0
-
-			#pragma vertex vert
-			#pragma fragment vfft_mrt
-
-			ENDCG
-		}*/
 
 		Pass
 		{

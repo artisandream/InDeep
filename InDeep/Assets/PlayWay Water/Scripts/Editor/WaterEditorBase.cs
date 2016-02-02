@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using UnityEditor;
 using UnityEditor.AnimatedValues;
+using System.Collections.Generic;
 
 namespace PlayWay.Water
 {
@@ -10,6 +11,13 @@ namespace PlayWay.Water
 		private GUIStyle groupStyle;
 		private GUIStyle textureBoxStyle;
 		private GUIStyle textureLabelStyle;
+		private GUIStyle textureBox;
+
+		private Material inspectMaterial;
+		private Stack<bool> foldouts = new Stack<bool>();
+		private float inspectMinValue = 0.0f;
+		private float inspectMaxValue = 1.0f;
+		protected bool useFoldouts;
 
 		virtual protected void UpdateValues()
 		{
@@ -18,14 +26,20 @@ namespace PlayWay.Water
 
 		virtual protected void UpdateStyles()
 		{
-			if(headerStyle == null)
+			//if(headerStyle == null)
 			{
-				headerStyle = new GUIStyle(GUI.skin.label);
+				headerStyle = new GUIStyle(EditorStyles.foldout);
+				//headerStyle.fontStyle = FontStyle.Bold;
+				headerStyle.margin = new RectOffset(0, 0, 0, 0);
+				headerStyle.fixedHeight = 10;
+				headerStyle.stretchHeight = false;
+
+				/*headerStyle = new GUIStyle(GUI.skin.label);
 				headerStyle.fontStyle = FontStyle.Bold;
 				headerStyle.stretchWidth = false;
 				headerStyle.margin = new RectOffset(0, 12, 0, 0);
 				headerStyle.normal.textColor = Color.white;
-				//headerStyle.margin = new RectOffset(0, 0, 12, 0);
+				//headerStyle.margin = new RectOffset(0, 0, 12, 0);*/
 			}
 
 			if(groupStyle == null)
@@ -60,30 +74,50 @@ namespace PlayWay.Water
 			if(headerStyle == null)
 				UpdateStyles();
 
-			GUILayout.Space(10);
+			GUILayout.Space(4);
 
-			GUILayout.Label(label, EditorStyles.boldLabel);
-
-			//if(anim.isAnimating)
-			//	Repaint();
-
-			//if(EditorGUILayout.BeginFadeGroup(anim.faded))
+			if(!useFoldouts)
 			{
+				GUILayout.Label(label, EditorStyles.boldLabel);
 				EditorGUILayout.BeginVertical(groupStyle);
-				//foldouts.Push(true);
 				return true;
 			}
+			else
+			{
+				if(anim.isAnimating)
+					Repaint();
 
-			//foldouts.Push(false);
-			//return false;
+				anim.target = EditorGUILayout.Foldout(anim.target, label, headerStyle);
+
+				if(EditorGUILayout.BeginFadeGroup(anim.faded))
+				{
+					EditorGUILayout.BeginVertical(groupStyle);
+					foldouts.Push(true);
+					return true;
+				}
+
+				foldouts.Push(false);
+				return false;
+			}
 		}
 
 		protected void EndGroup()
 		{
-			//if(foldouts.Pop())
+			if(!useFoldouts)
+			{
+				GUILayout.Space(6);
 				EditorGUILayout.EndVertical();
+			}
+			else
+			{
+				if(foldouts.Pop())
+				{
+					GUILayout.Space(6);
+					EditorGUILayout.EndVertical();
+				}
 
-			//EditorGUILayout.EndFadeGroup();
+				EditorGUILayout.EndFadeGroup();
+			}
 		}
 
 		static protected void MaterialFloatSlider(Material material, string label, string property, float spaceLeft = 0, float spaceRight = 0, float min = 0.0f, float max = 1.0f)
@@ -204,7 +238,7 @@ namespace PlayWay.Water
 		protected SerializedProperty PropertyField(string name)
 		{
 			SerializedProperty property = serializedObject.FindProperty(name);
-			EditorGUILayout.PropertyField(property);
+			EditorGUILayout.PropertyField(property, true);
 
 			return property;
 		}
@@ -224,6 +258,59 @@ namespace PlayWay.Water
 				EditorGUILayout.EndHorizontal();
 
 			return property;
+		}
+
+		protected void DisplayTextureInspector(Texture texture)
+		{
+			if(textureBox == null)
+			{
+				textureBox = new GUIStyle(GUI.skin.box);
+				textureBox.alignment = TextAnchor.MiddleCenter;
+				textureBox.fontStyle = FontStyle.Bold;
+				textureBox.normal.textColor = EditorStyles.boldLabel.normal.textColor;
+				textureBox.active.textColor = EditorStyles.boldLabel.normal.textColor;
+				textureBox.focused.textColor = EditorStyles.boldLabel.normal.textColor;
+			}
+
+			GUILayout.BeginHorizontal();
+			{
+				GUILayout.FlexibleSpace();
+				GUILayout.Box(texture != null ? "" : "NOT AVAILABLE", textureBox, GUILayout.Width(Screen.width * 0.85f), GUILayout.Height(Screen.width * 0.85f));
+				Rect texRect = GUILayoutUtility.GetLastRect();
+
+				if(texture != null && Event.current.type == EventType.Repaint)
+				{
+					if(inspectMaterial == null)
+					{
+						inspectMaterial = new Material(Shader.Find("PlayWay Water/Editor/Inspect Texture"));
+						inspectMaterial.hideFlags = HideFlags.DontSave;
+					}
+
+					inspectMaterial.SetVector("_RangeR", new Vector4(inspectMinValue, 1.0f / (inspectMaxValue - inspectMinValue)));
+					inspectMaterial.SetVector("_RangeG", new Vector4(inspectMinValue, 1.0f / (inspectMaxValue - inspectMinValue)));
+					inspectMaterial.SetVector("_RangeB", new Vector4(inspectMinValue, 1.0f / (inspectMaxValue - inspectMinValue)));
+					Graphics.DrawTexture(texRect, texture, inspectMaterial);
+					Repaint();
+				}
+
+				GUILayout.FlexibleSpace();
+			}
+
+			GUILayout.EndHorizontal();
+
+			EditorGUILayout.MinMaxSlider(ref inspectMinValue, ref inspectMaxValue, 0.0f, 1.0f);
+		}
+
+		protected struct WaterMap
+		{
+			public string name;
+			public System.Func<Texture> getTexture;
+
+			public WaterMap(string name, System.Func<Texture> getTexture)
+			{
+				this.name = name;
+				this.getTexture = getTexture;
+			}
 		}
 	}
 }

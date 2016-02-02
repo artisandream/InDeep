@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utility/Info"
+Shader "PlayWay Water/Utility/Info"
 {
 	/*SubShader
 	{
@@ -22,9 +22,9 @@
 				#pragma domain ds_surf
 			#endif
 
-			#pragma multi_compile __ _FFT_WAVES
-			#pragma multi_compile ____ _GERSTNER_WAVES
-			#define _QUADS 1
+			#pragma multi_compile __ _WAVES_FFT
+			#pragma multi_compile ____ _WAVES_GERSTNER
+			#define _TRIANGLES 1
 
 			#define POST_TESS_VERT vert
 			#define TESS_OUTPUT VertexOutput
@@ -47,8 +47,8 @@
 
 			CGPROGRAM
 
-			#pragma multi_compile __ _FFT_WAVES
-			#pragma multi_compile ____ _GERSTNER_WAVES
+			#pragma multi_compile __ _WAVES_FFT
+			#pragma multi_compile ____ _WAVES_GERSTNER
 
 			#pragma target 3.0
 			#pragma vertex vert
@@ -71,7 +71,7 @@
 
 			CGPROGRAM
 
-			#pragma multi_compile ____ _GERSTNER_WAVES
+			#pragma multi_compile ____ _WAVES_GERSTNER
 
 			#pragma target 2.0
 			#pragma vertex vert

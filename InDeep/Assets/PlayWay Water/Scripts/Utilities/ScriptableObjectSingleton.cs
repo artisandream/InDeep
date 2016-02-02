@@ -1,37 +1,24 @@
 ﻿using UnityEngine;
 
-public class ScriptableObjectSingleton : ScriptableObject
+namespace PlayWay.Water
 {
-	static protected T LoadSingleton<T>() where T : ScriptableObject
+	public class ScriptableObjectSingleton : ScriptableObject
 	{
-		var instance = Resources.Load<T>(typeof(T).Name);
-
-#if UNITY_EDITOR
-		if(instance == null)
+		static protected T LoadSingleton<T>() where T : ScriptableObject
 		{
-			instance = ScriptableObject.CreateInstance<T>();
-
-			string path = GetPackagePath(instance, "/Resources/" + typeof(T).Name + ".asset");
-
-			UnityEditor.AssetDatabase.CreateAsset(instance, path);
-		}
-#endif
-
-		return instance;
-	}
+			var instance = Resources.Load<T>(typeof(T).Name);
 
 #if UNITY_EDITOR
-	static private string GetPackagePath(ScriptableObject so, string path)
-	{
-		var script = UnityEditor.MonoScript.FromScriptableObject(so);
-		string p = UnityEditor.AssetDatabase.GetAssetPath(script);
+			if(instance == null)
+			{
+				instance = CreateInstance<T>();
 
-		string dir = System.IO.Path.GetDirectoryName(p);
-
-		while(!System.IO.Directory.Exists(dir + "/Scripts"))
-			dir = System.IO.Path.GetDirectoryName(dir);
-
-		return dir + path;
-	}
+				string path = WaterPackageUtilities.WaterPackagePath + "/Resources/" + typeof(T).Name + ".asset";
+				UnityEditor.AssetDatabase.CreateAsset(instance, path);
+			}
 #endif
+
+			return instance;
+		}
+	}
 }

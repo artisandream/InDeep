@@ -9,11 +9,17 @@ namespace PlayWay.Water
 		[SyncVar]
 		private float time;
 
-		private WaterWavesFFT wavesFFT;
+		private Water water;
 
 		void Start()
 		{
-			wavesFFT = GetComponent<WaterWavesFFT>();
+			water = GetComponent<Water>();
+
+			if(water == null)
+			{
+				enabled = false;
+				return;
+			}
 		}
 
 		void Update()
@@ -22,9 +28,8 @@ namespace PlayWay.Water
 				time = Time.time;
 			else
 				time += Time.deltaTime;
-
-			if(wavesFFT != null)
-				wavesFFT.SetTime(time);
-		}
+			
+			water.Time = time;
+        }
 	}
 }

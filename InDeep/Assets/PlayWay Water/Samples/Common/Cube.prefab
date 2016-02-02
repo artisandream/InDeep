@@ -72,9 +72,9 @@ Rigidbody:
   m_PrefabInternal: {fileID: 100100000}
   m_GameObject: {fileID: 133292}
   serializedVersion: 2
-  m_Mass: 4000
+  m_Mass: 5000
   m_Drag: 0
-  m_AngularDrag: 0.05
+  m_AngularDrag: 0.85
   m_UseGravity: 1
   m_IsKinematic: 0
   m_Interpolate: 0
@@ -105,7 +105,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   sampleCount: 2
   dragCoefficient: 0.9
+  precision: 0.2
   buoyancyIntensity: 1
+  flowIntensity: 6
 --- !u!1001 &100100000
 Prefab:
   m_ObjectHideFlags: 1
@@ -117,6 +119,10 @@ Prefab:
       propertyPath: sampleCount
       value: 2
       objectReference: {fileID: 0}
+    - target: {fileID: 0}
+      propertyPath: m_Materials.Array.data[0]
+      value: 
+      objectReference: {fileID: 2100000, guid: 8e49dc2f348e783469f1b18e527b2878, type: 2}
     m_RemovedComponents: []
   m_ParentPrefab: {fileID: 0}
   m_RootGameObject: {fileID: 133292}

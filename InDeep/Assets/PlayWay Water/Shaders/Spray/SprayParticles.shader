@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Spray/Spray Particle"
+Shader "PlayWay Water/Spray/Spray Particle"
 {
 	Properties
 	{
@@ -28,6 +28,9 @@
 		_DetailAlbedoMap("Detail Albedo x2", 2D) = "grey" {}
 		_DetailNormalMapScale("Scale", Float) = 1.0
 		_DetailNormalMap("Normal Map", 2D) = "bump" {}
+
+		_SpecularFresnelBias("Specular Fresnel Bias", Float) = 0.0
+		_WaterMask("", 2D) = "black" {}
 
 		_TileSize("", Float) = 90
 		_ParticleParams("Particle Params (scale, fade in speed, horizontal scale, cull distance)", Vector) = (2.5, 2.0, 2.0, 40.0)

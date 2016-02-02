@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Foam/Local"
+Shader "PlayWay Water/Foam/Local"
 {
 	Properties { _MainTex ("", 2D) = "" {} }
 
@@ -57,12 +57,6 @@
 		half jacobian = -(j.x * j.y - j.z * j.z);
 		half gain = max(0.0, jacobian + 0.94);
 
-#if FOAM_POW_2
-		gain = gain * gain;
-#elif FOAM_POW_N
-		gain = pow(gain, _FoamParameters.z);
-#endif
-
 		return gain;
 	}
 
@@ -99,8 +93,6 @@
 
 			#pragma vertex vertBottom
 			#pragma fragment fragTop
-
-			#pragma multi_compile FOAM_POW_1 FOAM_POW_2 FOAM_POW_N
 
 			ENDCG
 		}

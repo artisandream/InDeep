@@ -14,10 +14,10 @@ namespace PlayWay.Water
 		{
 			this.shader = shader;
 
-			kernelIndex = (numButterflies - 8) << 1;
+			kernelIndex = (numButterflies - 5) << 1;
 
 			if(twoChannels)
-				kernelIndex += 6;
+				kernelIndex += 10;
 		}
 
 		public override void SetupMaterials()
@@ -25,48 +25,52 @@ namespace PlayWay.Water
 			// nothing to do
 		}
 
-		override public RenderTexture ComputeFFT(Texture tex)
+		override public void ComputeFFT(Texture tex, RenderTexture target)
 		{
-			using(var rt1 = renderTexturesSet.GetTemporary())
-			using(var rt2 = renderTexturesSet.GetTemporary())
+			var rt1 = renderTexturesSet.GetTemporary();
+
+			if(!target.IsCreated())
 			{
-				if(!realOutput.IsCreated())
-					realOutput.Create();
-
-				shader.SetTexture(kernelIndex, "_ButterflyTex", Butterfly);
-				shader.SetTexture(kernelIndex, "_SourceTex", tex);
-				shader.SetTexture(kernelIndex, "_TargetTex", rt1);
-				shader.Dispatch(kernelIndex, 1, tex.height, 1);
-
-				shader.SetTexture(kernelIndex + 1, "_ButterflyTex", Butterfly);
-				shader.SetTexture(kernelIndex + 1, "_SourceTex", rt1);
-				shader.SetTexture(kernelIndex + 1, "_TargetTex", rt2);
-				shader.Dispatch(kernelIndex + 1, 1, tex.height, 1);
-
-				Graphics.Blit(rt2, realOutput);
+				target.enableRandomWrite = true;
+				target.Create();
 			}
 
-			return realOutput;
+			shader.SetTexture(kernelIndex, "_ButterflyTex", Butterfly);
+			shader.SetTexture(kernelIndex, "_SourceTex", tex);
+			shader.SetTexture(kernelIndex, "_TargetTex", rt1);
+			shader.Dispatch(kernelIndex, 1, tex.height, 1);
+
+			shader.SetTexture(kernelIndex + 1, "_ButterflyTex", Butterfly);
+			shader.SetTexture(kernelIndex + 1, "_SourceTex", rt1);
+			shader.SetTexture(kernelIndex + 1, "_TargetTex", target);
+			shader.Dispatch(kernelIndex + 1, 1, tex.height, 1);
+
+			rt1.Dispose();
 		}
 
 		override protected void FillButterflyTexture(Texture2D butterfly, int[][] indices, Vector2[][] weights)
 		{
-			for(int row = 0; row < numButterflies; row++)
+			for(int row = 0; row < numButterflies; ++row)
 			{
-				for(int col = 0; col < resolution; col++)
+				for(int scaleIndex = 0; scaleIndex < 2; ++scaleIndex)
 				{
-					Color c;
+					int offset = scaleIndex == 0 ? 0 : resolution;
 
-					int indexX = numButterflies - row - 1;
-					int indexY = (col << 1);
+					for(int col = 0; col < resolution; ++col)
+					{
+						Color c;
 
-					c.r = indices[indexX][indexY];
-					c.g = indices[indexX][indexY + 1];
+						int indexX = numButterflies - row - 1;
+						int indexY = (col << 1);
 
-					c.b = weights[row][col].x;
-					c.a = weights[row][col].y;
+						c.r = indices[indexX][indexY] + offset;
+						c.g = indices[indexX][indexY + 1] + offset;
 
-					butterfly.SetPixel(col, row, c);
+						c.b = weights[row][col].x;
+						c.a = weights[row][col].y;
+
+						butterfly.SetPixel(offset + col, row, c);
+					}
 				}
 			}
 		}

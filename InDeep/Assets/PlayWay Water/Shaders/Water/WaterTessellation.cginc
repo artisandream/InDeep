@@ -1,25 +1,26 @@
-﻿#include "Tessellation.cginc"
+#include "Tessellation.cginc"
 #include "Lighting.cginc"
 
 float _TesselationFactor;
 
-#ifndef TESS_FACTOR
-	#define TESS_FACTOR UnityEdgeLengthBasedTessCull (v0.vertex, v1.vertex, v2.vertex, _TesselationFactor, _MaxDisplacement)
-#endif
-
 struct TesselatorVertexInput
 {
-    float4 vertex	: INTERNALTESSPOS;
-//#if _PROJECTION_GRID
-//	float distance : TEXCOORD0;
-//#endif
-	half3 normal	: NORMAL;
+    float4 vertex		: INTERNALTESSPOS;
+	float tessFactor	: TEXCOORD0;
+	half3 normal		: NORMAL;
     #if defined(DYNAMICLIGHTMAP_ON) || defined(UNITY_PASS_META)
 		half2 uv2		: TEXCOORD1;
     #endif
 };
 
-#if _PROJECTION_GRID || _QUADS
+float CalcDistanceTessFactor(float4 vertex, float minDist, float maxDist, float tess)
+{
+	float dist = distance(vertex, _WorldSpaceCameraPos);
+	float f = clamp(1.0 - (dist - minDist) / (maxDist - minDist), 0.01, 1.0) * tess;
+	return f;
+}
+
+#if defined(_PROJECTION_GRID) || !defined(_TRIANGLES)
 
 	/*
 	 * QUAD TESSELATION
@@ -40,72 +41,16 @@ struct TesselatorVertexInput
 		float inside[2] : SV_InsideTessFactor;
 	};
 
-	float edgeTessFactor(float3 pos)
-	{
-		float normalFactor = 1.0 - abs(dot(normalize(pos - _WorldSpaceCameraPos.xyz), float3(0, 1, 0)));
-		
-		return normalFactor * normalFactor * _TesselationFactor;
-	}
-
 	HS_CONSTANT_OUTPUT hsconst (InputPatch<TesselatorVertexInput,4> v)
 	{
 		HS_CONSTANT_OUTPUT o;
 
-		//if (v[0].distance > 0 && v[1].distance > 0 && v[2].distance > 0 && v[3].distance > 0)
-		//{
-			/*o.edge[0] = sqrt(v[0].distance + v[3].distance) * 15 / _TesselationFactor;
-			o.edge[1] = sqrt(v[0].distance + v[1].distance) * 15 / _TesselationFactor;
-			o.edge[2] = sqrt(v[1].distance + v[2].distance) * 15 / _TesselationFactor;
-			o.edge[3] = sqrt(v[2].distance + v[3].distance) * 15 / _TesselationFactor;*/
-
-			/*o.edge[0] = edgeTessFactor((v[0].vertex + v[3].vertex) * 0.5);
-			o.edge[1] = edgeTessFactor((v[0].vertex + v[1].vertex) * 0.5);
-			o.edge[2] = edgeTessFactor((v[1].vertex + v[2].vertex) * 0.5);
-			o.edge[3] = edgeTessFactor((v[2].vertex + v[3].vertex) * 0.5);*/
-
-			/*o.edge[0] = (v[0].distance + v[3].distance) * 0.5 / _TesselationFactor;
-			o.edge[1] = (v[0].distance + v[1].distance) * 0.5 / _TesselationFactor;
-			o.edge[2] = (v[1].distance + v[2].distance) * 0.5 / _TesselationFactor;
-			o.edge[3] = (v[2].distance + v[3].distance) * 0.5 / _TesselationFactor;*/
-
-			o.edge[0] = UnityCalcEdgeTessFactor(v[0].vertex, v[3].vertex, _TesselationFactor);
-			o.edge[1] = UnityCalcEdgeTessFactor(v[0].vertex, v[1].vertex, _TesselationFactor);
-			o.edge[2] = UnityCalcEdgeTessFactor(v[1].vertex, v[2].vertex, _TesselationFactor);
-			o.edge[3] = UnityCalcEdgeTessFactor(v[2].vertex, v[3].vertex, _TesselationFactor);
-
-			//o.inside[0] = (o.edge[0] + o.edge[1] + o.edge[2]) / 3.0;
-			//o.inside[1] = (o.edge[0] + o.edge[2] + o.edge[3]) / 3.0;
-			o.inside[0] = (o.edge[0] + o.edge[1] + o.edge[2] + o.edge[3]) / 4.0;
-			o.inside[1] = (o.edge[0] + o.edge[1] + o.edge[2] + o.edge[3]) / 4.0;
-			//o.inside[0] = 1.0;
-			//o.inside[1] = 1.0;
-
-			/*o.edge[0] = _TesselationFactor - 5.9f;
-			o.edge[1] = _TesselationFactor - 5.9f;
-			o.edge[2] = _TesselationFactor - 5.9f;
-			o.edge[3] = _TesselationFactor - 5.9f;
-
-			o.inside[0] = _TesselationFactor - 5.9f;
-			o.inside[1] = _TesselationFactor - 5.9f;*/
-
-			/*o.edge[0] = 3.0;
-			o.edge[1] = 3.0;
-			o.edge[2] = 3.0;
-			o.edge[3] = 3.0;
-
-			o.inside[0] = 3.0;
-			o.inside[1] = 3.0;*/
-		//}
-		/*else
-		{
-			o.edge[0] = 0;
-			o.edge[1] = 0;
-			o.edge[2] = 0;
-			o.edge[3] = 0;
-
-			o.inside[0] = 0;
-			o.inside[1] = 0;
-		}*/
+		float4 tess = float4(v[0].tessFactor, v[1].tessFactor, v[2].tessFactor, v[3].tessFactor);
+		o.edge[0] = 0.5 * (tess.x + tess.w);
+		o.edge[1] = 0.5 * (tess.x + tess.y);
+		o.edge[2] = 0.5 * (tess.y + tess.z);
+		o.edge[3] = 0.5 * (tess.z + tess.w);
+		o.inside[0] = o.inside[1] = (o.edge[0] + o.edge[1] + o.edge[2] + o.edge[3]) * 0.25;
 
 		return o;
 	}
@@ -171,21 +116,15 @@ struct TesselatorVertexInput
 		return v[id];
 	}
 
-	float4 tessEdge(TesselatorVertexInput v0, TesselatorVertexInput v1, TesselatorVertexInput v2)
-	{
-		return TESS_FACTOR;			//return float4(1,1,1,1);
-	}
-
 	UnityTessellationFactors hsconst(InputPatch<TesselatorVertexInput, 3> v)
 	{
 		UnityTessellationFactors o;
-		float4 tf;
-		tf = tessEdge(v[0], v[1], v[2]);
+		float4 tf = UnityCalcTriEdgeTessFactors(float3(v[0].tessFactor, v[1].tessFactor, v[2].tessFactor));
 		o.edge[0] = tf.x; o.edge[1] = tf.y; o.edge[2] = tf.z; o.inside = tf.w;
 		return o;
 	}
 
-	#ifdef POST_TESS_VERT
+	#ifndef BASIC_INPUTS
 	[UNITY_domain("tri")]
 	TESS_OUTPUT ds_surf(UnityTessellationFactors tessFactors, const OutputPatch<TesselatorVertexInput, 3> vi, float3 bary : SV_DomainLocation) {
 		VertexInput v;
@@ -195,6 +134,15 @@ struct TesselatorVertexInput
 	#if defined(DYNAMICLIGHTMAP_ON) || defined(UNITY_PASS_META)
 		v.uv2 = vi[0].uv2*bary.x + vi[1].uv2*bary.y + vi[2].uv2*bary.z;
 	#endif
+
+		TESS_OUTPUT o = POST_TESS_VERT(v);
+		return o;
+	}
+	#else
+	[UNITY_domain("tri")]
+	TESS_OUTPUT ds_surf(UnityTessellationFactors tessFactors, const OutputPatch<TesselatorVertexInput, 3> vi, float3 bary : SV_DomainLocation) {
+		VertexInput2 v;
+		v.vertex = vi[0].vertex*bary.x + vi[1].vertex*bary.y + vi[2].vertex*bary.z;
 
 		TESS_OUTPUT o = POST_TESS_VERT(v);
 		return o;
@@ -209,14 +157,10 @@ TesselatorVertexInput tessvert_surf (VertexInput v)
 #if _PROJECTION_GRID
 	o.vertex = v.vertex;
 	o.vertex = float4(GetProjectedPosition(o.vertex.xy), 1);
-	//float4 projected = mul(UNITY_MATRIX_VP, o.vertex);
-	//projected.z /= projected.w;
-	//o.distance = length(_WorldSpaceCameraPos.xyz - o.vertex.xyz);// -_ProjectionParams.y;
-	//o.distance = 1;
-	//if (projected.z < -1.1)
-	//	o.distance = -1;
+	o.tessFactor = round(_TesselationFactor);			// use flat tesselation rate as it doesn't have much sense to support tesselation for projection grid
 #else
 	o.vertex = mul(_OBJECT2WORLD, v.vertex);
+	o.tessFactor = CalcDistanceTessFactor(o.vertex, _ProjectionParams.y, _ProjectionParams.z, _TesselationFactor);
 #endif
 	o.normal = v.normal;
 #if defined(DYNAMICLIGHTMAP_ON) || defined(UNITY_PASS_META)

@@ -1,4 +1,6 @@
-﻿using UnityEngine;
+﻿using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
 using UnityEngine.Rendering;
 
 namespace PlayWay.Water
@@ -30,15 +32,16 @@ namespace PlayWay.Water
 		[SerializeField]
 		private Shader volumeBackShader;
 
-		[HideInInspector]
-		[SerializeField]
-		private Shader waterInfoShader;
-
 		[SerializeField]
 		private WaterGeometryType geometryType = WaterGeometryType.Auto;
 
 		[SerializeField]
 		private bool renderWaterDepth = true;
+
+		[Tooltip("Water has a pretty smooth shape so it's often safe to render it's depth in a lower resolution than the rest of the scene. Although the default value is 1.0, you may probably safely use 0.5 and gain some minor performance boost. If you will encounter any artifacts in masking or image effects, set it back to 1.0.")]
+		[Range(0.2f, 1.0f)]
+		[SerializeField]
+		private float baseEffectsQuality = 1.0f;
 
 		[SerializeField]
 		private bool renderVolumes = true;
@@ -51,56 +54,103 @@ namespace PlayWay.Water
 		private int forcedVertexCount = 0;
 
 		private RenderTexture waterDepthTexture;
-		private RenderTexture waterMaskTexture;
-		private RenderTexture waterInfoTexture;
+		private RenderTexture subtractiveMaskTexture, additiveMaskTexture;
         private CommandBuffer depthRenderCommands;
 		private CommandBuffer cleanUpCommands;
+		private WaterCamera baseCamera;
         private Camera effectCamera;
-		private Camera sceneCamera;
+		private Camera mainCamera;
 		private Camera thisCamera;
 		private Material depthMixerMaterial;
-        private RenderTextureFormat depthTexturesFormat;
+        private RenderTextureFormat waterDepthTextureFormat;
+		private RenderTextureFormat blendedDepthTexturesFormat;
 		private Vector2 localMapsOrigin;
 		private float localMapsSizeInv;
 		private int waterDepthTextureId;
-		private int waterMaskId;
-		private bool isEffectCamera;
+		private int underwaterMaskId;
+		private int additiveMaskId;
+		private int subtractiveMaskId;
+        private bool isEffectCamera;
 		private bool effectsEnabled;
-		private UnderwaterIME underwaterIME;
+		private WaterVolumeProbe waterProbe;
+		private IWaterImageEffect[] imageEffects;
+		private Texture2D underwaterWhiteMask;
+
+		static private Dictionary<Camera, WaterCamera> waterCamerasCache = new Dictionary<Camera, WaterCamera>();
+
+		void Awake()
+		{
+			waterDepthTextureId = Shader.PropertyToID("_WaterDepthTexture");
+			underwaterMaskId = Shader.PropertyToID("_UnderwaterMask");
+			additiveMaskId = Shader.PropertyToID("_AdditiveMask");
+			subtractiveMaskId = Shader.PropertyToID("_SubtractiveMask");
+
+			if(SystemInfo.graphicsShaderLevel >= 40 && SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.Depth))
+			{
+				waterDepthTextureFormat = RenderTextureFormat.Depth;			// only > 4.0 shader targets can copy depth textures
+				blendedDepthTexturesFormat = RenderTextureFormat.Depth;
+			}
+			else
+			{
+				if(SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat) && baseEffectsQuality > 0.2f)
+					blendedDepthTexturesFormat = RenderTextureFormat.RFloat;
+				else if(SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RHalf))
+					blendedDepthTexturesFormat = RenderTextureFormat.RHalf;
+				else
+					blendedDepthTexturesFormat = RenderTextureFormat.R8;
+
+				if(SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.Depth))
+					waterDepthTextureFormat = RenderTextureFormat.Depth;
+				else
+					waterDepthTextureFormat = blendedDepthTexturesFormat;
+			}
+			
+			OnValidate();
+		}
 
 		void OnEnable()
 		{
 			thisCamera = GetComponent<Camera>();
 
-			waterDepthTextureId = Shader.PropertyToID("_WaterDepthTexture");
-			waterMaskId = Shader.PropertyToID("_WaterMask");
+			if(!isEffectCamera)
+			{
+				float vfovrad = thisCamera.fieldOfView * Mathf.Deg2Rad;
+				float nearPlaneSizeY = thisCamera.nearClipPlane * Mathf.Tan(vfovrad * 0.5f);
+				waterProbe = WaterVolumeProbe.CreateProbe(transform, nearPlaneSizeY * 3.0f);
 
-			depthTexturesFormat = SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.RFloat) ? RenderTextureFormat.RFloat : RenderTextureFormat.RHalf;
-			
-			underwaterIME = GetComponent<UnderwaterIME>();
-		}
+				imageEffects = GetComponents<IWaterImageEffect>();
+
+				foreach(var imageEffect in imageEffects)
+					imageEffect.OnWaterCameraEnabled();
+			}
+        }
 
 		void OnDisable()
 		{
+			if(waterProbe != null)
+			{
+				waterProbe.gameObject.Destroy();
+				waterProbe = null;
+			}
+
 			if(effectCamera != null)
 			{
 				effectCamera.gameObject.Destroy();
 				effectCamera = null;
 			}
 
-			if(sceneCamera != null)
-			{
-				sceneCamera.gameObject.Destroy();
-				sceneCamera = null;
-            }
-
 			if(depthMixerMaterial != null)
 			{
 				depthMixerMaterial.Destroy();
 				depthMixerMaterial = null;
 			}
-
+			
 			DisableEffects();
+		}
+
+		void OnDestroy()
+		{
+			waterCamerasCache.Clear();
 		}
 
 		public bool IsEffectCamera
@@ -129,6 +179,26 @@ namespace PlayWay.Water
 			get { return forcedVertexCount; }
 		}
 
+		public bool RenderVolumes
+		{
+			get { return renderVolumes; }
+		}
+
+		public Water ContainingWater
+		{
+			get { return baseCamera == null ? waterProbe.CurrentWater : baseCamera.ContainingWater; }
+		}
+
+		public WaterVolumeProbe WaterVolumeProbe
+		{
+			get { return waterProbe; }
+		}
+
+		public Camera MainCamera
+		{
+			get { return mainCamera; }
+		}
+
 		/// <summary>
 		/// Ready to render alternative camera for effects.
 		/// </summary>
@@ -141,6 +211,11 @@ namespace PlayWay.Water
 
 				return effectCamera;
 			}
+		}
+
+		public RenderTexture SubtractiveMask
+		{
+			get { return subtractiveMaskTexture; }
 		}
 
 		void Update()
@@ -167,26 +242,28 @@ namespace PlayWay.Water
 
 			if(volumeBackShader == null)
 				volumeBackShader = Shader.Find("PlayWay Water/Volumes/Back");
-
-			if(waterInfoShader == null)
-				waterInfoShader = Shader.Find("PlayWay Water/Utility/Info");
         }
 		
 		void OnPreCull()
 		{
+			SetFallbackUnderwaterMask();
+			RenderWater();
+
 			if(!effectsEnabled) return;
+
+			SetLocalMapCoordinates();
+
+			if(renderVolumes)
+				RenderWaterMasks();
 
 			if(renderWaterDepth)
 				RenderWaterDepth();
 			
-			if(renderVolumes && Application.isPlaying)
+			if(imageEffects != null && Application.isPlaying)
 			{
-				RenderWaterHeightData();
-				RenderWaterVolumeSubtractors();
+				foreach(var imageEffect in imageEffects)
+					imageEffect.OnWaterCameraPreCull();
 			}
-
-			if(underwaterIME != null && Application.isPlaying)
-				underwaterIME.OnWaterCameraPreCull();
         }
 
 		void OnPostRender()
@@ -196,27 +273,67 @@ namespace PlayWay.Water
 				RenderTexture.ReleaseTemporary(waterDepthTexture);
 				waterDepthTexture = null;
 			}
-
-			if(waterMaskTexture != null)
+			
+			if(subtractiveMaskTexture != null)
 			{
-				RenderTexture.ReleaseTemporary(waterMaskTexture);
-				waterMaskTexture = null;
+				RenderTexture.ReleaseTemporary(subtractiveMaskTexture);
+				subtractiveMaskTexture = null;
 			}
 
-			if(waterInfoTexture != null)
+			if(additiveMaskTexture != null)
 			{
-				RenderTexture.ReleaseTemporary(waterInfoTexture);
-				waterInfoTexture = null;
+				RenderTexture.ReleaseTemporary(additiveMaskTexture);
+				additiveMaskTexture = null;
             }
+
+			var waters = WaterGlobals.Instance.Waters;
+			int numWaterInstances = waters.Count;
+
+			for(int waterIndex = 0; waterIndex < numWaterInstances; ++waterIndex)
+				waters[waterIndex].Renderer.PostRender(thisCamera);
+		}
+
+		/// <summary>
+		/// Fast and allocation free way to get a WaterCamera component attached to camera.
+		/// </summary>
+		/// <param name="camera"></param>
+		/// <returns></returns>
+		static public WaterCamera GetWaterCamera(Camera camera)
+		{
+			WaterCamera waterCamera;
+
+			if(!waterCamerasCache.TryGetValue(camera, out waterCamera))
+			{
+				waterCamera = camera.GetComponent<WaterCamera>();
+
+				if(waterCamera != null)
+					waterCamerasCache[camera] = waterCamera;
+				else
+					waterCamerasCache[camera] = waterCamera = null;         // force null reference (Unity uses custom null operator)
+			}
+
+			return waterCamera;
         }
+
+		private void RenderWater()
+		{
+			var waters = WaterGlobals.Instance.Waters;
+			int numWaterInstances = waters.Count;
+			
+			for(int waterIndex=0; waterIndex<numWaterInstances; ++waterIndex)
+				waters[waterIndex].Renderer.Render(thisCamera, geometryType);
+		}
 
 		private void RenderWaterDepth()
 		{
-			waterDepthTexture = RenderTexture.GetTemporary(thisCamera.pixelWidth, thisCamera.pixelHeight, 16, depthTexturesFormat, RenderTextureReadWrite.Linear);
+			if(waterDepthTexture == null)
+			{
+				waterDepthTexture = RenderTexture.GetTemporary(Mathf.RoundToInt(thisCamera.pixelWidth * baseEffectsQuality), Mathf.RoundToInt(thisCamera.pixelHeight * baseEffectsQuality), waterDepthTextureFormat == RenderTextureFormat.Depth ? 32 : 16, waterDepthTextureFormat, RenderTextureReadWrite.Linear);
+				waterDepthTexture.filterMode = baseEffectsQuality > 0.98f ? FilterMode.Point : FilterMode.Bilinear;			// no need to filter it, if it's of screen size
+				waterDepthTexture.wrapMode = TextureWrapMode.Clamp;
+			}
 
-			if(effectCamera == null)
-				CreateEffectsCamera();
-
+			var effectCamera = EffectsCamera;
 			effectCamera.CopyFrom(thisCamera);
 			effectCamera.GetComponent<WaterCamera>().enabled = true;
 			effectCamera.renderingPath = RenderingPath.Forward;
@@ -224,126 +341,116 @@ namespace PlayWay.Water
 			effectCamera.depthTextureMode = DepthTextureMode.None;
 			effectCamera.backgroundColor = Color.white;
 			effectCamera.targetTexture = waterDepthTexture;
-			effectCamera.cullingMask = (1 << 4);
+			effectCamera.cullingMask = (1 << WaterProjectSettings.Instance.WaterLayer);
 			effectCamera.RenderWithShader(waterDepthShader, "CustomType");
+			effectCamera.targetTexture = null;
 
 			Shader.SetGlobalTexture(waterDepthTextureId, waterDepthTexture);
 		}
 
-		private void RenderWaterHeightData()
+		private void RenderWaterMasks()
 		{
-			int resolution = Mathf.NextPowerOfTwo(Mathf.Min(thisCamera.pixelWidth, thisCamera.pixelHeight)) / 4;
+			var waters = WaterGlobals.Instance.Waters;
+			int numWaters = waters.Count;
 
-			waterInfoTexture = RenderTexture.GetTemporary(resolution, resolution, 0, RenderTextureFormat.RHalf, RenderTextureReadWrite.Linear, 1);
-			waterInfoTexture.filterMode = FilterMode.Bilinear;
-			waterInfoTexture.wrapMode = TextureWrapMode.Clamp;
+			bool hasSubtractiveVolumes = false;
+			bool hasBoundingVolumes = false;
+			bool hasFlatMasks = false;
 
-			if(effectCamera == null)
-				CreateEffectsCamera();
+			for(int i = 0; i < numWaters; ++i)
+				waters[i].Renderer.OnSharedSubtractiveMaskRender(ref hasSubtractiveVolumes, ref hasBoundingVolumes, ref hasFlatMasks);
 
+			var effectCamera = EffectsCamera;
 			effectCamera.CopyFrom(thisCamera);
-
-			float maxHeight = 0.0f;
-			float maxWaterLevel = 0.0f;
-
-			foreach(var water in WaterGlobals.Instance.Waters)
-			{
-				maxHeight += water.SpectraRenderer.MaxHeight;
-
-				float posY = water.transform.position.y;
-				if(maxWaterLevel < posY)
-					maxWaterLevel = posY;
-			}
-
-			// place camera
-			Vector3 thisCameraPosition = thisCamera.transform.position;
-			Vector3 screenSpaceDown = WaterUtilities.ViewportWaterPerpendicular(thisCamera);
-			Vector3 worldSpaceDown = thisCamera.transform.localToWorldMatrix * WaterUtilities.RaycastPlane(thisCamera, maxWaterLevel, screenSpaceDown);
-			worldSpaceDown.y = 0.0f;
-
-			Vector3 effectCameraPosition = new Vector3(thisCameraPosition.x, 0.0f, thisCameraPosition.z) + worldSpaceDown * 2.0f;
-
-			effectCamera.transform.position = new Vector3(effectCameraPosition.x, maxWaterLevel + effectCamera.farClipPlane * 0.5f, effectCameraPosition.z);
-			effectCamera.transform.LookAt(new Vector3(effectCameraPosition.x, -1.0f, effectCameraPosition.z), Vector3.forward);
-			effectCamera.orthographic = true;
-			//effectCamera.orthographicSize = 400.0f;
-			effectCamera.orthographicSize = Mathf.Max(thisCameraPosition.y * 2.0f, maxHeight * 10.0f, Vector3.Distance(effectCameraPosition, thisCameraPosition));
-
-			var waterCamera = effectCamera.GetComponent<WaterCamera>();
-			waterCamera.geometryType = WaterGeometryType.UniformGrid;
-			waterCamera.forcedVertexCount = resolution * resolution - 20;
-
-			// setup and render
-			effectCamera.GetComponent<WaterCamera>().enabled = true;
-			effectCamera.renderingPath = RenderingPath.Forward;
-			effectCamera.clearFlags = CameraClearFlags.SolidColor;
-			effectCamera.depthTextureMode = DepthTextureMode.None;
-			effectCamera.backgroundColor = Color.white;
-			effectCamera.targetTexture = waterInfoTexture;
-			effectCamera.cullingMask = (1 << 4);
-			effectCamera.RenderWithShader(waterInfoShader, "CustomType");
-			
-			waterCamera.geometryType = WaterGeometryType.Auto;
-			waterCamera.forcedVertexCount = 0;
-
-			float halfPixelSize = effectCamera.orthographicSize / resolution;
-			localMapsOrigin = new Vector2((effectCameraPosition.x - effectCamera.orthographicSize) + halfPixelSize, (effectCameraPosition.z - effectCamera.orthographicSize) + halfPixelSize);
-			localMapsSizeInv = 0.5f / (effectCamera.orthographicSize);
-
-			Shader.SetGlobalTexture("_LocalHeightData", waterInfoTexture);
-			Shader.SetGlobalVector("_LocalMapsCoords", new Vector4(-localMapsOrigin.x, -localMapsOrigin.y, localMapsSizeInv, 0.0f));
-		}
-
-		private void RenderWaterVolumeSubtractors()
-		{
-			var projectSettings = WaterProjectSettings.Instance;
-			var volumeFrontTexture = RenderTexture.GetTemporary(thisCamera.pixelWidth, thisCamera.pixelHeight, 16, SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat) ? RenderTextureFormat.ARGBFloat : RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear, 1);
-			waterMaskTexture = RenderTexture.GetTemporary(thisCamera.pixelWidth, thisCamera.pixelHeight, 16, SystemInfo.SupportsRenderTextureFormat(RenderTextureFormat.ARGBFloat) ? RenderTextureFormat.ARGBFloat : RenderTextureFormat.ARGBHalf, RenderTextureReadWrite.Linear, 1);
-			
-			if(effectCamera == null)
-				CreateEffectsCamera();
-
-			//Shader.SetGlobalMatrix("UNITY_MATRIX_VP_INVERSE", (camera.projectionMatrix * camera.worldToCameraMatrix).inverse);
-
 			effectCamera.GetComponent<WaterCamera>().enabled = false;
-			effectCamera.CopyFrom(thisCamera);
 			effectCamera.renderingPath = RenderingPath.Forward;
-			effectCamera.clearFlags = CameraClearFlags.SolidColor;
 			effectCamera.depthTextureMode = DepthTextureMode.None;
-			effectCamera.backgroundColor = new Color(0.0f, 0.0f, 0.5f, 0.0f);
-			effectCamera.targetTexture = volumeFrontTexture;
-			effectCamera.cullingMask = (1 << projectSettings.WaterVolumesLayer);
-			effectCamera.RenderWithShader(volumeFrontShader, "CustomType");
 
-			Graphics.SetRenderTarget(waterMaskTexture);
-			GL.Clear(true, true, new Color(0.0f, 0.0f, 0.0f, 0.0f), 0.0f);
-
-			Shader.SetGlobalTexture("_VolumesFrontDepth", volumeFrontTexture);
-			effectCamera.clearFlags = CameraClearFlags.Nothing;
-			effectCamera.targetTexture = waterMaskTexture;
-			effectCamera.RenderWithShader(volumeBackShader, "CustomType");
-
-			RenderTexture.ReleaseTemporary(volumeFrontTexture);
-
-			if(projectSettings.WaterMasksEnabled)
+			if(hasSubtractiveVolumes || hasFlatMasks)
 			{
-				effectCamera.cullingMask = (1 << projectSettings.WaterMasksLayer);
-				effectCamera.Render();
+				if(subtractiveMaskTexture == null)
+				{
+					subtractiveMaskTexture = RenderTexture.GetTemporary(thisCamera.pixelWidth, thisCamera.pixelHeight, 16, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+					subtractiveMaskTexture.filterMode = FilterMode.Point;
+					subtractiveMaskTexture.wrapMode = TextureWrapMode.Clamp;
+				}
+
+				Graphics.SetRenderTarget(subtractiveMaskTexture);
+				GL.Clear(true, true, new Color(0.0f, 0.0f, 0.0f, 0.0f));
+
+				effectCamera.targetTexture = subtractiveMaskTexture;
+
+				if(hasSubtractiveVolumes)
+				{
+					effectCamera.clearFlags = CameraClearFlags.SolidColor;
+					effectCamera.backgroundColor = new Color(0.0f, 0.0f, 0.0f, 0.0f);           // R = water key, G = far, B = near, A = unused
+					effectCamera.cullingMask = (1 << WaterProjectSettings.Instance.WaterLayer);
+					effectCamera.RenderWithShader(volumeBackShader, "");
+
+					effectCamera.clearFlags = CameraClearFlags.Nothing;
+					effectCamera.RenderWithShader(volumeFrontShader, "");
+				}
+
+				if(hasFlatMasks)
+				{
+					effectCamera.clearFlags = CameraClearFlags.Nothing;
+					effectCamera.cullingMask = (1 << WaterProjectSettings.Instance.WaterTempLayer);
+					effectCamera.Render();                  // may be merged with effectCamera.RenderWithShader(volumeFrontShader, "");
+				}
+
+				for(int i = 0; i < numWaters; ++i)
+				{
+					waters[i].WaterMaterial.SetTexture(subtractiveMaskId, subtractiveMaskTexture);
+					waters[i].WaterBackMaterial.SetTexture(subtractiveMaskId, subtractiveMaskTexture);
+				}
 			}
 
-			foreach(var water in WaterGlobals.Instance.Waters)
+			if(hasBoundingVolumes)
 			{
-				water.WaterMaterial.SetTexture(waterMaskId, waterMaskTexture);
-				water.WaterVolumeMaterial.SetTexture(waterMaskId, waterMaskTexture);
+				for(int i = 0; i < numWaters; ++i)
+					waters[i].Renderer.OnSharedMaskAdditiveRender();
+
+				if(additiveMaskTexture == null)
+				{
+					additiveMaskTexture = RenderTexture.GetTemporary(thisCamera.pixelWidth, thisCamera.pixelHeight, 16, RenderTextureFormat.ARGBFloat, RenderTextureReadWrite.Linear);
+					additiveMaskTexture.filterMode = FilterMode.Point;
+					additiveMaskTexture.wrapMode = TextureWrapMode.Clamp;
+				}
+
+				Graphics.SetRenderTarget(additiveMaskTexture);
+				GL.Clear(true, true, new Color(0.0f, 0.0f, 0.0f, 0.0f));
+
+				effectCamera.clearFlags = CameraClearFlags.SolidColor;
+				effectCamera.backgroundColor = new Color(0.0f, 0.0f, 0.0f, 0.0f);           // R = water key, G = far, B = near, A = unused
+				effectCamera.targetTexture = additiveMaskTexture;
+				effectCamera.cullingMask = (1 << WaterProjectSettings.Instance.WaterLayer);
+				effectCamera.RenderWithShader(volumeBackShader, "");
+
+				effectCamera.clearFlags = CameraClearFlags.Nothing;
+				effectCamera.RenderWithShader(volumeFrontShader, "");
+
+				for(int i = 0; i < numWaters; ++i)
+				{
+					waters[i].WaterMaterial.SetTexture(additiveMaskId, additiveMaskTexture);
+					waters[i].WaterBackMaterial.SetTexture(additiveMaskId, additiveMaskTexture);
+				}
 			}
-			
-			Shader.SetGlobalTexture(waterMaskId, waterMaskTexture);
-        }
+
+			effectCamera.targetTexture = null;
+
+			for(int i = 0; i < numWaters; ++i)
+				waters[i].Renderer.OnSharedMaskPostRender();
+
+			//Shader.SetGlobalTexture("_WaterMask", waterMasksTexture);
+		}
 		
 		private void AddDepthRenderingCommands()
 		{
-			depthMixerMaterial = new Material(depthBlitCopyShader);
-			depthMixerMaterial.hideFlags = HideFlags.DontSave;
+			if(depthMixerMaterial == null)
+			{
+				depthMixerMaterial = new Material(depthBlitCopyShader);
+				depthMixerMaterial.hideFlags = HideFlags.DontSave;
+			}
 
 			var camera = GetComponent<Camera>();
 
@@ -354,10 +461,10 @@ namespace PlayWay.Water
 
 				depthRenderCommands = new CommandBuffer();
 				depthRenderCommands.name = "Apply Water Depth";
-				depthRenderCommands.GetTemporaryRT(waterlessDepthRT, camera.pixelWidth, camera.pixelHeight, 0, FilterMode.Point, depthTexturesFormat, RenderTextureReadWrite.Linear);
+				depthRenderCommands.GetTemporaryRT(waterlessDepthRT, camera.pixelWidth, camera.pixelHeight, blendedDepthTexturesFormat == RenderTextureFormat.Depth ? 32 : 0, FilterMode.Point, blendedDepthTexturesFormat, RenderTextureReadWrite.Linear);
 				depthRenderCommands.Blit(BuiltinRenderTextureType.None, waterlessDepthRT, depthMixerMaterial, 0);
 
-				depthRenderCommands.GetTemporaryRT(depthRT, camera.pixelWidth, camera.pixelHeight, 0, FilterMode.Point, depthTexturesFormat, RenderTextureReadWrite.Linear);
+				depthRenderCommands.GetTemporaryRT(depthRT, camera.pixelWidth, camera.pixelHeight, blendedDepthTexturesFormat == RenderTextureFormat.Depth ? 32 : 0, FilterMode.Point, blendedDepthTexturesFormat, RenderTextureReadWrite.Linear);
 				depthRenderCommands.SetRenderTarget(depthRT);
 				depthRenderCommands.ClearRenderTarget(true, true, Color.white);
 				depthRenderCommands.Blit(BuiltinRenderTextureType.None, depthRT, depthMixerMaterial, 1);
@@ -370,17 +477,17 @@ namespace PlayWay.Water
 
 				camera.depthTextureMode |= DepthTextureMode.Depth;
 
-				camera.AddCommandBuffer(camera.actualRenderingPath == RenderingPath.Forward ? CameraEvent.AfterDepthTexture : CameraEvent.AfterLighting, depthRenderCommands);
+				camera.AddCommandBuffer(camera.actualRenderingPath == RenderingPath.Forward ? CameraEvent.AfterDepthTexture : CameraEvent.BeforeLighting, depthRenderCommands);
 				camera.AddCommandBuffer(CameraEvent.AfterEverything, cleanUpCommands);
 			}
 		}
-
+		
 		private void RemoveDepthRenderingCommands()
 		{
 			if(depthRenderCommands != null)
 			{
 				thisCamera.RemoveCommandBuffer(CameraEvent.AfterDepthTexture, depthRenderCommands);
-				thisCamera.RemoveCommandBuffer(CameraEvent.AfterLighting, depthRenderCommands);
+				thisCamera.RemoveCommandBuffer(CameraEvent.BeforeLighting, depthRenderCommands);
 				depthRenderCommands.Dispose();
 				depthRenderCommands = null;
             }
@@ -404,7 +511,7 @@ namespace PlayWay.Water
 			effectsEnabled = true;
 
 			AddDepthRenderingCommands();
-		}
+        }
 
 		private void DisableEffects()
 		{
@@ -427,7 +534,7 @@ namespace PlayWay.Water
 
 		private void CreateEffectsCamera()
 		{
-			var depthCameraGo = new GameObject("Water Depth Camera");
+			var depthCameraGo = new GameObject(name + " Water Effects Camera");
 			depthCameraGo.hideFlags = HideFlags.HideAndDontSave;
 
 			effectCamera = depthCameraGo.AddComponent<Camera>();
@@ -435,16 +542,63 @@ namespace PlayWay.Water
 
 			var depthWaterCamera = depthCameraGo.AddComponent<WaterCamera>();
 			depthWaterCamera.isEffectCamera = true;
+			depthWaterCamera.mainCamera = thisCamera;
+            depthWaterCamera.baseCamera = this;
             depthWaterCamera.waterDepthShader = waterDepthShader;
         }
-
-		private void CreateSceneCamera()
+		
+		private void SetFallbackUnderwaterMask()
 		{
-			var depthCameraGo = new GameObject("Water Scene Camera");
-			depthCameraGo.hideFlags = HideFlags.HideAndDontSave;
+			if(underwaterWhiteMask == null)
+			{
+				underwaterWhiteMask = new Texture2D(2, 2, TextureFormat.ARGB32, false);
+				underwaterWhiteMask.hideFlags = HideFlags.DontSave;
+				underwaterWhiteMask.SetPixel(0, 0, Color.black);
+				underwaterWhiteMask.SetPixel(1, 0, Color.black);
+				underwaterWhiteMask.SetPixel(0, 1, Color.black);
+				underwaterWhiteMask.SetPixel(1, 1, Color.black);
+				underwaterWhiteMask.Apply(false, true);
+			}
 
-			sceneCamera = depthCameraGo.AddComponent<Camera>();
-			sceneCamera.enabled = false;
+			Shader.SetGlobalTexture(underwaterMaskId, underwaterWhiteMask);
 		}
-	}
+
+		private void SetLocalMapCoordinates()
+		{
+			int resolution = Mathf.NextPowerOfTwo(Mathf.Min(thisCamera.pixelWidth, thisCamera.pixelHeight)) >> 2;
+			float maxHeight = 0.0f;
+			float maxWaterLevel = 0.0f;
+
+			var waters = WaterGlobals.Instance.Waters;
+			int numWaterInstances = waters.Count;
+
+			for(int waterIndex = 0; waterIndex < numWaterInstances; ++waterIndex)
+			{
+				var water = waters[waterIndex];
+				maxHeight += water.MaxVerticalDisplacement;
+
+				float posY = water.transform.position.y;
+				if(maxWaterLevel < posY)
+					maxWaterLevel = posY;
+			}
+
+			// place camera
+			Vector3 thisCameraPosition = thisCamera.transform.position;
+			Vector3 screenSpaceDown = WaterUtilities.ViewportWaterPerpendicular(thisCamera);
+			Vector3 worldSpaceDown = thisCamera.transform.localToWorldMatrix * WaterUtilities.RaycastPlane(thisCamera, maxWaterLevel, screenSpaceDown);
+			
+			Vector3 effectCameraPosition = new Vector3(thisCameraPosition.x + worldSpaceDown.x * 2.0f, 0.0f, thisCameraPosition.z + worldSpaceDown.z * 2.0f);
+
+			float size1 = thisCameraPosition.y * 6.0f;
+			float size2 = maxHeight * 10.0f;
+			float size3 = Vector3.Distance(effectCameraPosition, thisCameraPosition);
+			float size = size1 > size2 ? (size1 > size3 ? size1 : size3) : (size2 > size3 ? size2 : size3);
+
+			float halfPixelSize = size / resolution;
+			localMapsOrigin = new Vector2((effectCameraPosition.x - size) + halfPixelSize, (effectCameraPosition.z - size) + halfPixelSize);
+			localMapsSizeInv = 0.5f / size;
+
+			Shader.SetGlobalVector("_LocalMapsCoords", new Vector4(-localMapsOrigin.x, -localMapsOrigin.y, localMapsSizeInv, 0.0f));
+		}
+    }
 }

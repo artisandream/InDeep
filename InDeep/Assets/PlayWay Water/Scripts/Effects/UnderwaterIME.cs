@@ -1,10 +1,11 @@
 ﻿using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace PlayWay.Water
 {
 	[RequireComponent(typeof(Camera))]
 	[RequireComponent(typeof(WaterCamera))]
-	public class UnderwaterIME : MonoBehaviour
+	public class UnderwaterIME : MonoBehaviour, IWaterImageEffect
 	{
 		[HideInInspector]
 		[SerializeField]
@@ -23,20 +24,20 @@ namespace PlayWay.Water
 		private Shader composeUnderwaterMaskShader;
 
 		[SerializeField]
-		private float waterDropsEffectDuration = 1.3f;
-
-		[Range(0.0f, 0.4f)]
-		[SerializeField]
-		private float distortionIntensity = 0.06f;
-
-		[SerializeField]
-		private float distortionAnimationSpeed = 0.1f;
-
-		[SerializeField]
 		private Blur blur;
 
 		[SerializeField]
-		private bool underwaterAudioEffects = true;
+		private bool underwaterAudio = true;
+
+		[Tooltip("Individual camera blur scale. It's recommended to modify blur scale through water profiles. Use this one, only if some of your cameras need a clear view and some don't.")]
+		[Range(0.0f, 4.0f)]
+		[SerializeField]
+		private float cameraBlurScale = 1.0f;
+
+		[Tooltip("Individual camera absorption color. It's recommended to modify absorption color through water profiles. Use this one, only if you fine tune some specific cameras to your needs.")]
+		[ColorUsage(false, true, 0.0f, 3.0f, 0.0f, 3.0f)]
+		[SerializeField]
+		private Color cameraAbsorptionColor = new Color(0.0f, 0.0f, 0.0f, 0.0f);
 
 		private Material maskMaterial;
 		private Material imeMaterial;
@@ -47,25 +48,23 @@ namespace PlayWay.Water
 		private WaterCamera localWaterCamera;
 
 		private AudioReverbFilter reverbFilter;
-		private WaterDropsIME waterDropsIME;
+		private WaterSample waterSample;
+
+		private CommandBuffer maskCommandBuffer;
 
 		private float intensity = float.NaN;
-		private float previousIntensity;
-		private float previousVerticalDistance;
-		private float startTime;
-		private float duration;
-		private float startValue, endValue;
+		private float waterLevel;
 		private bool renderUnderwaterMask;
 		private bool effectEnabled = true;
-
-		private WaterVolumeProbe waterProbe;
+		private int maskRT, maskRT2;
 
 		void Awake()
 		{
-			waterProbe = WaterVolumeProbe.CreateProbe(transform);
-
 			localCamera = GetComponent<Camera>();
 			localWaterCamera = GetComponent<WaterCamera>();
+
+			maskRT = Shader.PropertyToID("_UnderwaterMask");
+			maskRT2 = Shader.PropertyToID("_UnderwaterMask2");
 
 			OnValidate();
 
@@ -82,12 +81,11 @@ namespace PlayWay.Water
 			composeUnderwaterMaskMaterial.hideFlags = HideFlags.DontSave;
 
 			reverbFilter = GetComponent<AudioReverbFilter>();
-			waterDropsIME = GetComponent<WaterDropsIME>();
 
-			if(reverbFilter == null && underwaterAudioEffects)
+			if(reverbFilter == null && underwaterAudio)
 				reverbFilter = gameObject.AddComponent<AudioReverbFilter>();
 		}
-
+		
 		public float Intensity
 		{
 			get { return intensity; }
@@ -99,29 +97,50 @@ namespace PlayWay.Water
 			set { effectEnabled = value; }
 		}
 
+		public float WaterLevel
+		{
+			get { return waterLevel; }
+		}
+
+		// Called by WaterCamera.cs
+		public void OnWaterCameraEnabled()
+		{
+			var waterCamera = GetComponent<WaterCamera>();
+			waterCamera.WaterVolumeProbe.Enter.AddListener(OnWaterEnter);
+			waterCamera.WaterVolumeProbe.Leave.AddListener(OnWaterLeave);
+		}
+		
 		// Called by WaterCamera.cs, to update this effect when it's disabled
 		public void OnWaterCameraPreCull()
 		{
-			if(waterProbe.CurrentWater == null || !effectEnabled)
+			if(waterSample == null || !effectEnabled)
 			{
 				enabled = false;
-				UpdateTimers();
 				return;
 			}
-
-			Vector3 position = transform.position;
-
+			
 			float vfovrad = localCamera.fieldOfView * Mathf.Deg2Rad;
 			float nearPlaneSizeY = localCamera.nearClipPlane * Mathf.Tan(vfovrad * 0.5f);
 
-			float waterLevel = waterProbe.CurrentWater.GetHeightAt(position.x, position.z, Mathf.Max(0.006f, 0.35f - Mathf.Abs(previousVerticalDistance) * 0.2f), 3);
-			float verticalDistance = transform.position.y - waterLevel;
+			waterLevel = waterSample.GetAndReset(transform.position, WaterSample.ComputationsMode.Stabilized).y;
+            float verticalDistance = transform.position.y - waterLevel;
 
-			if(verticalDistance - nearPlaneSizeY > 0.25f + waterProbe.CurrentWater.SpectraRenderer.MaxDisplacement)
+			Water containingWater = localWaterCamera.ContainingWater;
+
+			if(containingWater == null)
 			{
 				enabled = false;
 			}
-			else if(verticalDistance + nearPlaneSizeY < -0.25f - waterProbe.CurrentWater.SpectraRenderer.MaxDisplacement)
+			else if(!containingWater.Volume.Boundless)
+			{
+				enabled = true;
+				renderUnderwaterMask = true;
+			}
+			else if(verticalDistance - nearPlaneSizeY > 0.25f + containingWater.MaxVerticalDisplacement)
+			{
+				enabled = false;
+			}
+			else if(verticalDistance + nearPlaneSizeY < -0.25f - containingWater.MaxVerticalDisplacement)
 			{
 				enabled = true;
 				renderUnderwaterMask = false;
@@ -135,16 +154,27 @@ namespace PlayWay.Water
 			float intensity = (-verticalDistance + nearPlaneSizeY) * 0.25f;
 
 			SetEffectsIntensity(intensity);
-			UpdateTimers();
-
-			previousVerticalDistance = verticalDistance;
+		}
+		
+		void OnDisable()
+		{
+			if(maskCommandBuffer != null)
+				maskCommandBuffer.Clear();
 		}
 
 		void OnDestroy()
 		{
+			if(maskCommandBuffer != null)
+			{
+				maskCommandBuffer.Dispose();
+				maskCommandBuffer = null;
+			}
+
+			if(blur != null)
+				blur.Dispose();
+
 			Destroy(maskMaterial);
 			Destroy(imeMaterial);
-			if(blur != null) blur.Dispose();
 		}
 
 		void OnValidate()
@@ -164,87 +194,93 @@ namespace PlayWay.Water
 			if(blur != null)
 				blur.Validate("PlayWay Water/Utilities/Blur (Underwater)");
 		}
+		
+		void OnPreCull()
+		{
+			RenderUnderwaterMask();
+		}
 
 		void OnRenderImage(RenderTexture source, RenderTexture destination)
 		{
-			if(waterProbe.CurrentWater == null)
+			if(localWaterCamera.ContainingWater == null)
 			{
 				Graphics.Blit(source, destination);
 				return;
 			}
 
 			source.filterMode = FilterMode.Bilinear;
+			
+			var temp1 = RenderTexturesCache.GetTemporary(source.width, source.height, 0, destination != null ? destination.format : source.format, true, false);
+			temp1.Texture.filterMode = FilterMode.Bilinear;
+			temp1.Texture.wrapMode = TextureWrapMode.Clamp;
 
-			using(var underwaterMask = GetTemporaryUnderwaterMask())
+			RenderDepthScatter(source, temp1);
+
+			blur.TotalSize = localWaterCamera.ContainingWater.UnderwaterBlurSize * cameraBlurScale;
+			blur.Apply(temp1);
+
+			RenderDistortions(temp1, destination);
+			temp1.Dispose();
+		}
+
+		private void RenderUnderwaterMask()
+		{
+			if(maskCommandBuffer == null)
+				return;
+
+			maskCommandBuffer.Clear();
+
+			var containingWater = localWaterCamera.ContainingWater;
+
+			if(renderUnderwaterMask || (containingWater != null && containingWater.Renderer.MaskCount > 0))
 			{
-				RenderUnderwaterMask(underwaterMask);
-
-				using(var temp1 = RenderTexturesCache.GetTemporary(Screen.width, Screen.height, 0, destination != null ? destination.format : source.format, true, false))
-				{
-					temp1.Texture.filterMode = FilterMode.Bilinear;
-					temp1.Texture.wrapMode = TextureWrapMode.Clamp;
-
-					RenderDepthScatter(underwaterMask, source, temp1);
-
-					blur.BlurMaterial.SetTexture("_UnderwaterMask", underwaterMask);
-					blur.Apply(temp1);
-
-					RenderDistortions(temp1, destination);
-				}
+				int w = Camera.current.pixelWidth >> 2;
+				int h = Camera.current.pixelHeight >> 2;
+				maskCommandBuffer.GetTemporaryRT(maskRT, w, h, 0, FilterMode.Bilinear, RenderTextureFormat.R8, RenderTextureReadWrite.Linear, 1);
+				maskCommandBuffer.GetTemporaryRT(maskRT2, w, h, 0, FilterMode.Point, RenderTextureFormat.R8, RenderTextureReadWrite.Linear, 1);
 			}
-		}
-
-		private TemporaryRenderTexture GetTemporaryUnderwaterMask()
-		{
-			if(renderUnderwaterMask || WaterProjectSettings.Instance.WaterMasksEnabled)
-				return RenderTexturesCache.GetTemporary(Screen.width, Screen.height, 0, RenderTextureFormat.R8, true, false);
 			else
-				return RenderTexturesCache.GetTemporary(4, 4, 0, RenderTextureFormat.R8, true, false);
-		}
-
-		private void RenderDistortionMap(RenderTexture target)
-		{
-			noiseMaterial.SetVector("_Offset", new Vector4(0.0f, 0.0f, Time.time * distortionAnimationSpeed, 0.0f));
-			noiseMaterial.SetVector("_Period", new Vector4(4, 4, 4, 4));
-			Graphics.Blit(null, target, noiseMaterial, 1);
-		}
-
-		private void RenderUnderwaterMask(RenderTexture underwaterMask)
-		{
-			var camera = localCamera;
-
-			Graphics.SetRenderTarget(underwaterMask);
-
-			if(renderUnderwaterMask)
+				maskCommandBuffer.GetTemporaryRT(maskRT, 4, 4, 0, FilterMode.Point, RenderTextureFormat.R8, RenderTextureReadWrite.Linear, 1);
+			
+			if(renderUnderwaterMask && containingWater != null)
 			{
-				maskMaterial.CopyPropertiesFromMaterial(waterProbe.CurrentWater.WaterMaterial);
-				maskMaterial.SetVector("_ViewportDown", camera.worldToCameraMatrix.MultiplyVector(Vector3.down));
-				maskMaterial.SetPass(0);
+				maskMaterial.CopyPropertiesFromMaterial(containingWater.WaterMaterial);
 
-				GL.Clear(false, true, Color.white);
-
+				maskCommandBuffer.SetRenderTarget(maskRT2);
+				maskCommandBuffer.ClearRenderTarget(false, true, Color.black);
+				
 				Matrix4x4 matrix;
-				var meshes = waterProbe.CurrentWater.Geometry.GetTransformedMeshes(camera, out matrix, WaterGeometryType.RadialGrid);
+				var meshes = containingWater.Geometry.GetTransformedMeshes(localCamera, out matrix, containingWater.Geometry.GeometryType == WaterGeometry.Type.ProjectionGrid ? WaterGeometryType.RadialGrid : WaterGeometryType.Auto, true);
 
-				// render meshes manually to avoid culling
 				foreach(var mesh in meshes)
-					Graphics.DrawMeshNow(mesh, matrix);
+					maskCommandBuffer.DrawMesh(mesh, matrix, maskMaterial);
+
+				// filter out common artifacts from the mask
+				maskCommandBuffer.Blit(maskRT2, maskRT, imeMaterial, 4);
+				maskCommandBuffer.ReleaseTemporaryRT(maskRT2);
 			}
 			else
-				GL.Clear(false, true, Color.black);
+			{
+				maskCommandBuffer.SetRenderTarget(maskRT);
+				maskCommandBuffer.ClearRenderTarget(false, true, Color.white);
+			}
 
-			if(WaterProjectSettings.Instance.WaterMasksEnabled)
-				Graphics.Blit(null, composeUnderwaterMaskMaterial, 0);
+			if(containingWater != null && containingWater.Renderer.MaskCount != 0)
+			{
+				var subtractiveMask = localWaterCamera.SubtractiveMask;
 
-			Graphics.SetRenderTarget(null);
+				if(subtractiveMask != null)
+					maskCommandBuffer.Blit((Texture)subtractiveMask, maskRT, composeUnderwaterMaskMaterial, 0);
+			}
 		}
 
-		private void RenderDepthScatter(RenderTexture underwaterMask, RenderTexture source, RenderTexture target)
+		private void RenderDepthScatter(RenderTexture source, RenderTexture target)
 		{
-			imeMaterial.CopyPropertiesFromMaterial(waterProbe.CurrentWater.WaterMaterial);
+			imeMaterial.CopyPropertiesFromMaterial(localWaterCamera.ContainingWater.WaterMaterial);
 
-			imeMaterial.SetTexture("_UnderwaterMask", underwaterMask);
-			imeMaterial.SetColor("_AbsorptionColor", waterProbe.CurrentWater.UnderwaterAbsorptionColor);
+			Vector2 surfaceOffset2D = localWaterCamera.ContainingWater.SurfaceOffset;
+            imeMaterial.SetVector("_SurfaceOffset", new Vector3(surfaceOffset2D.x, localWaterCamera.ContainingWater.transform.position.y, surfaceOffset2D.y));
+			imeMaterial.SetColor("_AbsorptionColor", cameraAbsorptionColor.maxColorComponent == 0.0f ? localWaterCamera.ContainingWater.UnderwaterAbsorptionColor : cameraAbsorptionColor);
 			imeMaterial.SetMatrix("UNITY_MATRIX_VP_INVERSE", Matrix4x4.Inverse(localCamera.projectionMatrix * localCamera.worldToCameraMatrix));
 
 			var sss = imeMaterial.GetVector("_SubsurfaceScatteringPack");
@@ -257,21 +293,62 @@ namespace PlayWay.Water
 
 		private void RenderDistortions(RenderTexture source, RenderTexture target)
 		{
+			float distortionIntensity = localWaterCamera.ContainingWater.UnderwaterDistortionsIntensity;
+
 			if(distortionIntensity > 0.0f)
 			{
-				var distortionTex = RenderTexture.GetTemporary(Screen.width / 4, Screen.height / 4, 0, RenderTextureFormat.ARGB32);
+				int w = Camera.current.pixelWidth >> 2;
+				int h = Camera.current.pixelHeight >> 2;
+				var distortionTex = RenderTexturesCache.GetTemporary(w, h, 0, RenderTextureFormat.ARGB32, true, false, false);
 				RenderDistortionMap(distortionTex);
 
 				imeMaterial.SetTexture("_DistortionTex", distortionTex);
 				imeMaterial.SetFloat("_DistortionIntensity", distortionIntensity);
 				Graphics.Blit(source, target, imeMaterial, 3);
 
-				RenderTexture.ReleaseTemporary(distortionTex);
+				distortionTex.Dispose();
 			}
 			else
 				Graphics.Blit(source, target);
 		}
 
+		private void RenderDistortionMap(RenderTexture target)
+		{
+			noiseMaterial.SetVector("_Offset", new Vector4(0.0f, 0.0f, Time.time * localWaterCamera.ContainingWater.UnderwaterDistortionAnimationSpeed, 0.0f));
+			noiseMaterial.SetVector("_Period", new Vector4(4, 4, 4, 4));
+			Graphics.Blit(null, target, noiseMaterial, 1);
+		}
+
+		private void OnWaterEnter()
+		{
+			var waterCamera = GetComponent<WaterCamera>();
+
+			waterSample = new WaterSample(waterCamera.ContainingWater, WaterSample.DisplacementMode.Height, 0.15f);
+			waterSample.Start(transform.position);
+
+			if(maskCommandBuffer == null)
+			{
+				maskCommandBuffer = new CommandBuffer();
+				maskCommandBuffer.name = "Render Underwater Mask";
+			}
+
+			var camera = GetComponent<Camera>();
+			camera.AddCommandBuffer(camera.actualRenderingPath == RenderingPath.Forward ? CameraEvent.AfterDepthTexture : CameraEvent.AfterLighting, maskCommandBuffer);
+		}
+
+		private void OnWaterLeave()
+		{
+			waterSample.Stop();
+			waterSample = null;
+
+			if(maskCommandBuffer != null)
+			{
+				var camera = GetComponent<Camera>();
+				camera.RemoveCommandBuffer(CameraEvent.AfterDepthTexture, maskCommandBuffer);
+				camera.RemoveCommandBuffer(CameraEvent.AfterLighting, maskCommandBuffer);
+			}
+		}
+		
 		private void SetEffectsIntensity(float intensity)
 		{
 			if(localCamera == null)          // start wasn't called yet
@@ -281,11 +358,10 @@ namespace PlayWay.Water
 
 			if(this.intensity == intensity)
 				return;
-
-			this.previousIntensity = this.intensity;
+			
 			this.intensity = intensity;
 
-			if(reverbFilter != null && underwaterAudioEffects)
+			if(reverbFilter != null && underwaterAudio)
 			{
 				float reverbIntensity = intensity > 0.05f ? Mathf.Clamp01(intensity + 0.7f) : intensity;
 
@@ -297,36 +373,6 @@ namespace PlayWay.Water
 				reverbFilter.reflectionsLevel = -449.0f * reverbIntensity;
 				reverbFilter.reverbLevel = 1500.0f * reverbIntensity;
 				reverbFilter.reverbDelay = 0.0259f * reverbIntensity;
-			}
-
-			if(intensity <= 0.01f && previousIntensity > 0.01f)
-			{
-				startTime = Time.time;
-				duration = 0.6f;
-
-				if(waterDropsIME != null)
-					startValue = waterDropsIME.Intensity;
-
-				endValue = 0.06f;
-			}
-		}
-
-		private void UpdateTimers()
-		{
-			float t = Mathf.Clamp01((Time.time - startTime) / duration);
-
-			if(waterDropsIME != null)
-				waterDropsIME.Intensity = Mathf.Lerp(startValue, endValue, t);
-
-			if(t == 1.0f && endValue == 0.06f)
-			{
-				startTime = Time.time + 1.0f;
-				duration = waterDropsEffectDuration;
-
-				if(waterDropsIME != null)
-					startValue = waterDropsIME.Intensity;
-
-				endValue = 0.0f;
 			}
 		}
 	}

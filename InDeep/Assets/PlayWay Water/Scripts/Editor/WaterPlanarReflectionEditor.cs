@@ -13,11 +13,8 @@ namespace PlayWay.Water
 			PropertyField("reflectionMask", "Reflection Mask");
 			PropertyField("downsample", "Downsample");
 			PropertyField("retinaDownsample", "Downsample (Retina)");
-
-			//PropertyField("maxBlurDistance", "Blur Distance");
-			//PropertyField("depthBlur", "Depth Blur");
-			//PropertyField("nearBlur", "Near Blur");
-			PropertyField("blur", "Blur");
+			//PropertyField("clipPlaneOffset", "Clip Plane Offset");
+			PropertyField("highQuality", "High Quality");
 
 			serializedObject.ApplyModifiedProperties();
 		}

@@ -12,16 +12,16 @@
 
 // Do dithering for alpha blended shadows on SM3+/desktop;
 // on lesser systems do simple alpha-tested shadows
-#if defined(_ALPHABLEND_ON) || defined(_ALPHAPREMULTIPLY_ON)
-	#if !((SHADER_TARGET < 30) || defined (SHADER_API_MOBILE) || defined(SHADER_API_D3D11_9X) || defined (SHADER_API_PSP2) || defined (SHADER_API_PSM))
-	#define UNITY_STANDARD_USE_DITHER_MASK 1
-	#endif
-#endif
+//#if defined(_ALPHABLEND_ON) || defined(_ALPHAPREMULTIPLY_ON)
+//	#if !((SHADER_TARGET < 30) || defined (SHADER_API_MOBILE) || defined(SHADER_API_D3D11_9X) || defined (SHADER_API_PSP2) || defined (SHADER_API_PSM))
+//	#define UNITY_STANDARD_USE_DITHER_MASK 1
+//	#endif
+//#endif
 
 // Need to output UVs in shadow caster, since we need to sample texture and do clip/dithering based on it
-#if defined(_ALPHATEST_ON) || defined(_ALPHABLEND_ON) || defined(_ALPHAPREMULTIPLY_ON)
-#define UNITY_STANDARD_USE_SHADOW_UVS 1
-#endif
+//#if defined(_ALPHATEST_ON) || defined(_ALPHABLEND_ON) || defined(_ALPHAPREMULTIPLY_ON)
+//#define UNITY_STANDARD_USE_SHADOW_UVS 1
+//#endif
 
 // Has a non-empty shadow caster output struct (it's an error to have empty structs on some platforms...)
 #if !defined(V2F_SHADOW_CASTER_NOPOS_IS_EMPTY) || defined(UNITY_STANDARD_USE_SHADOW_UVS)
@@ -60,9 +60,9 @@ struct VertexOutputShadowCaster
 struct VertexOutputDepth
 {
 	float4 pos		: SV_POSITION;
-#if defined(UNITY_MIGHT_NOT_HAVE_DEPTH_TEXTURE)
+//#if defined(UNITY_MIGHT_NOT_HAVE_DEPTH_TEXTURE)
 	float2 depth	: TEXCOORD0;
-#endif
+//#endif
 };
 
 float4 UnityClipSpaceShadowCasterPosWS(float3 wPos, float3 normal)
@@ -111,10 +111,10 @@ VertexOutputShadowCaster vertShadowCaster (VertexInput v)
 	float4 posWorld = GET_WORLD_POS(v.vertex);
 
 	half2 normal;
-	half2 fftUV;
-	half3 displacement;
-	half mask;
-	TransformVertex(posWorld, normal, fftUV, displacement, mask);
+	float4 fftUV;
+	float4 fftUV2;
+	float3 displacement;
+	TransformVertex(posWorld, normal, fftUV, fftUV2, displacement);
 
 	half3 worldNormal = normalize(half3(normal.x, 1.0, normal.y));
 
@@ -175,13 +175,13 @@ VertexOutputDepth vertDepth (VertexInput v)
 	float4 posWorld = GET_WORLD_POS(v.vertex);
 
 	half2 normal;
-	half2 fftUV;
-	half3 displacement;
-	half mask;
-	TransformVertex(posWorld, normal, fftUV, displacement, mask);
+	float4 fftUV;
+	float4 fftUV2;
+	float3 displacement;
+	TransformVertex(posWorld, normal, fftUV, fftUV2, displacement);
 
 	o.pos = mul(UNITY_MATRIX_VP, posWorld);
-	UNITY_TRANSFER_DEPTH(o.depth);
+	o.depth = o.pos.zw;
 
 	return o;
 }
@@ -189,6 +189,7 @@ VertexOutputDepth vertDepth (VertexInput v)
 half4 fragDepth (VertexOutputDepth i) : SV_Target
 {
 	UNITY_OUTPUT_DEPTH(i.depth);
+	//return i.depth.x / i.depth.y;
 }			
 
 #endif // UNITY_STANDARD_SHADOW_INCLUDED

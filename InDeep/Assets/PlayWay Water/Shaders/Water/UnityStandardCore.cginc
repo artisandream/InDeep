@@ -48,7 +48,7 @@ UnityLight MainLight (half3 normalWorld)
 		// analytical light might be extracted from Lightmap data later on in the shader depending on the Lightmap type
 		l.color = half3(0.f, 0.f, 0.f);
 		l.ndotl  = 0.f;
-		l.dir = half3(0.f, 0.f, 0.f);
+		l.dir = half3(0.0001f, 0.f, 0.f);			// x = 0.0001 to prevent NaN evaluation during compulation when normalized (it's not allowed on older APIs)
 	#endif
 
 	return l;
@@ -148,22 +148,16 @@ half3 WorldNormal(half4 tan2world[3])
 	#define IN_VIEWDIR4PARALLAX_FWDADD(i) half3(0,0,0)
 #endif
 
-#if UNITY_SPECCUBE_BOX_PROJECTION
-	#define IN_WORLDPOS(i) i.posWorld
-#else
-	#define IN_WORLDPOS(i) half3(0,0,0)
-#endif
-
 #define IN_LIGHTDIR_FWDADD(i) half3(i.lightDir.xyz)
 
-#if _GERSTNER_WAVES || _DISPLACED_VOLUME
-	#define VERTEX_NORMAL i.normal
+#if _WAVES_GERSTNER || _DISPLACED_VOLUME
+	#define VERTEX_NORMAL i.pack1
 #else
 	#define VERTEX_NORMAL half3(0, 1, 0)
 #endif
 
 #define FRAGMENT_SETUP(x) FragmentCommonData x = \
-	FragmentSetup(i.tex, LOCAL_MAPS_UV, i.eyeVec, VERTEX_NORMAL, IN_VIEWDIR4PARALLAX(i), ExtractTangentToWorldPerPixel(), IN_WORLDPOS(i));
+	FragmentSetup(i.tex, LOCAL_MAPS_UV, i.eyeVec, VERTEX_NORMAL, IN_VIEWDIR4PARALLAX(i), ExtractTangentToWorldPerPixel(), posWorld);
 
 #define FRAGMENT_SETUP_FWDADD(x) FragmentCommonData x = \
 	FragmentSetup(i.tex, LOCAL_MAPS_UV, i.eyeVec, VERTEX_NORMAL, IN_VIEWDIR4PARALLAX_FWDADD(i), ExtractTangentToWorldPerPixel(/*i.tangentToWorldAndLightDir*/), posWorld);
@@ -228,21 +222,15 @@ inline FragmentCommonData FragmentSetup (half4 i_tex, half2 localMapsUv, half3 i
 	half3 eyeVec = i_eyeVec;
 	eyeVec = NormalizePerPixelNormal(eyeVec);
 
-	#ifdef _NORMALMAP
-		half2 normalFlat = NormalInTangentSpace(i_tex, i_posWorld, eyeVec, localMapsUv);
-
-#if _GERSTNER_WAVES
-		normalFlat += i_normalWorld.xy;
+#ifndef _DISPLACED_VOLUME
+	half2 normalFlat = NormalInTangentSpace(i_tex, i_posWorld, eyeVec, localMapsUv, i_normalWorld.xy);
+	half3 normalWorld = normalize(half3(normalFlat.x, 1.0, normalFlat.y));
+#else
+	half3 normalWorld = normalize(i_normalWorld);
 #endif
 
-		half3 normalWorld = normalize(half3(normalFlat.x, 1.0, normalFlat.y));
-	#else
-		// Should get compiled out, isn't being used in the end.
-	 	half3 normalWorld = i_normalWorld;
-	#endif
-
-#if _DISPLACED_VOLUME
-		normalWorld = -normalWorld;
+#if _WATER_BACK
+	normalWorld = -normalWorld;
 #endif
 
 	FragmentCommonData o = UNITY_SETUP_BRDF_INPUT (i_tex, localMapsUv, normalWorld);
@@ -257,7 +245,7 @@ inline FragmentCommonData FragmentSetup (half4 i_tex, half2 localMapsUv, half3 i
 inline UnityGI FragmentGI (
 	float3 posWorld, 
 	half occlusion, half4 i_ambientOrLightmapUV, half atten, half oneMinusRoughness, half3 normalWorld, half3 eyeVec,
-	UnityLight light, half4 screenPos)
+	UnityLight light, half4 screenPos, half2 dirRoughness)
 {
 	UnityGIInput d;
 	d.light = light;
@@ -283,7 +271,7 @@ inline UnityGI FragmentGI (
 	d.probeHDR[1] = unity_SpecCube1_HDR;
 
 	return UnityGlobalIllumination (
-		d, occlusion, oneMinusRoughness, normalWorld);
+		d, occlusion, oneMinusRoughness, normalWorld, true, dirRoughness);
 }
 
 //-------------------------------------------------------------------------------------
@@ -297,6 +285,16 @@ half4 OutputForward (half4 output, half alphaFromSurface)
 	return output;
 }
 
+/*sampler2D _ShadowMapTexture;
+#define SHADOW_COORDS2(idx1) unityShadowCoord4 _ShadowCoord : TEXCOORD##idx1;
+#define TRANSFER_SHADOW2(a) a._ShadowCoord = ComputeScreenPos(a.pos);
+
+half ShadowAttenuation(half4 shadowCoord)
+{
+	fixed shadow = tex2Dproj(_ShadowMapTexture, UNITY_PROJ_COORD(shadowCoord)).r;
+	return shadow;
+}*/
+
 // ------------------------------------------------------------------
 //  Base forward pass (directional light, emission, lightmaps, ...)
 
@@ -304,27 +302,14 @@ struct VertexOutputForwardBase
 {
 	float4 pos							: SV_POSITION;
 	half4 tex							: TEXCOORD0;
-	half4 eyeVec 						: TEXCOORD1;
-
-//#if _FFT_WAVES_SLOPE
-	half4 pack0							: TEXCOORD2;			// xy - global maps uv, zw - local maps uv
-//#endif
-
+	half4 eyeVec 						: TEXCOORD1;			// w - free
+	float4 pack0						: TEXCOORD2;			// xy - global uv 0, zw - local maps uv
 	half4 screenPos						: TEXCOORD3;
+	half4 ambientOrLightmapUV			: TEXCOORD4;			// SH or Lightmap UV
+	half4 pack1							: TEXCOORD5;			// gerstner: xy - normals, displaced volume: xyz - normals, non displaced volume: zw - fft uv 2
+	float4 fogCoord						: TEXCOORD6;
 
-	//half4 tangentToWorldAndParallax[3]	: TEXCOORD2;	// [3x3:tangentToWorld | 1x3:viewDirForParallax]
-	half4 ambientOrLightmapUV			: TEXCOORD5;	// SH or Lightmap UV
-#if _GERSTNER_WAVES || _DISPLACED_VOLUME
-	half3 normal						: TEXCOORD6;
-#endif
-	UNITY_FOG_COORDS(7)
-
-	// next ones would not fit into SM2.0 limits, but they are always for SM3.0+
-#if UNITY_SPECCUBE_BOX_PROJECTION || _INCLUDE_SLOPE_VARIANCE
-	float3 posWorld						: TEXCOORD8;
-#endif
-
-	SHADOW_COORDS(9)
+	SHADOW_COORDS(7)
 };
 
 inline half3 UnityObjectToWorldNormalFast( in half3 norm )
@@ -339,41 +324,35 @@ VertexOutputForwardBase vertForwardBase (VertexInput v)
 	UNITY_INITIALIZE_OUTPUT(VertexOutputForwardBase, o);
 
 	float4 posWorld = GET_WORLD_POS(v.vertex);
-	half2 uv2 = half2(posWorld.xz) / 100;
-	//wshCoords.y = 1.0 - wshCoords.y;
+	half2 uv2 = posWorld.xz / 100.0;
 
 	half2 normal;
-	float2 fftUV;
+	float4 fftUV;
+	float4 fftUV2;
 	float3 displacement;
-	half mask;
-	TransformVertex(posWorld, normal, fftUV, displacement, mask);
+	TransformVertex(posWorld, normal, fftUV, fftUV2, displacement);
 
-	#if _GERSTNER_WAVES
-		o.normal.xy = normal * _DisplacementNormalsIntensity;
+	#if _WAVES_GERSTNER
+		o.pack1.xy = normal * _DisplacementNormalsIntensity;
 	#elif _DISPLACED_VOLUME
-		o.normal = UnityObjectToWorldNormal(v.normal);		// use mesh normals
+		o.pack1.xyz = UnityObjectToWorldNormal(v.normal);		// use mesh normals
 	#endif
 
-	#if _FFT_WAVES_SLOPE
-		o.pack0.xy = fftUV;
+	#if _WAVES_FFT_SLOPE
+		o.pack0.xy = fftUV.xy;
+		o.pack1.zw = fftUV.zw;
 	#endif
 
 	#if _DISPLACED_VOLUME || _WATER_FOAM_LOCAL || _WATER_OVERLAYS
 		o.pack0.zw = (posWorld.xz + _LocalMapsCoords.xy) * _LocalMapsCoords.zz;
 	#endif
 
-	o.eyeVec.w = mask;
 	o.tex = TexCoords(uv2, uv2);
 	
-	#if UNITY_SPECCUBE_BOX_PROJECTION || _INCLUDE_SLOPE_VARIANCE
-		o.posWorld = posWorld.xyz;
-	#endif
-
 	o.pos = mul(UNITY_MATRIX_VP, posWorld);
 	o.screenPos = ComputeScreenPos(o.pos);
 
-	half3 eyeVec = posWorld.xyz - _WorldSpaceCameraPos;
-	o.eyeVec.xyz = NormalizePerVertexNormal(eyeVec);
+	o.eyeVec.xyz = NormalizePerVertexNormal(posWorld.xyz - _WorldSpaceCameraPos);
 
 	half3 normalWorld = normalize(half3(normal.x, 1.0, normal.y));
 	
@@ -408,47 +387,48 @@ VertexOutputForwardBase vertForwardBase (VertexInput v)
 	#endif
 	
 	UNITY_TRANSFER_FOG(o,o.pos);
+	o.fogCoord.yzw = posWorld;
 	return o;
 }
 
 half4 fragForwardBase (VertexOutputForwardBase i) : SV_Target
 {
+	half alpha = 1;
+
+	UnderwaterClip(i.screenPos);
+
+	float3 posWorld = i.fogCoord.yzw;
+	MaskWater(alpha, i.screenPos, posWorld);
+
+#if SHADER_TARGET >= 30
+	clip(alpha - 0.006);
+#endif
+
 	WATER_SETUP1(i, s)
 	FRAGMENT_SETUP(s)
-	WATER_SETUP2(i, s)
 
+	half2 dirRoughness = 1.0 - s.oneMinusRoughness;
 #if _INCLUDE_SLOPE_VARIANCE
-	ApplySlopeVariance(i.posWorld, s.oneMinusRoughness);
+	ApplySlopeVariance(posWorld, s.oneMinusRoughness, /* out */ dirRoughness);
 #endif
 
 	UnityLight mainLight = MainLight (s.normalWorld);
 	half atten = SHADOW_ATTENUATION(i);
+	//half atten = ShadowAttenuation(i._ShadowCoord);
 	
 	//half occlusion = Occlusion(i.tex.xy);
 	half occlusion = 1;
 
 	UnityGI gi = FragmentGI (
-		s.posWorld, occlusion, i.ambientOrLightmapUV, atten, s.oneMinusRoughness, s.normalWorld, s.eyeVec, mainLight, i.screenPos);
+		s.posWorld, occlusion, i.ambientOrLightmapUV, atten, s.oneMinusRoughness, s.normalWorld, s.eyeVec, mainLight, i.screenPos, dirRoughness);
 
-	half4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.oneMinusRoughness, s.refractivity, s.normalWorld, -s.eyeVec, s.posWorld, gi.light, gi.indirect);
+	half4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.oneMinusRoughness, s.refractivity, s.normalWorld, -s.eyeVec, s.posWorld, gi.light, gi.indirect, atten);
 	c.rgb += UNITY_BRDF_GI (s.diffColor, s.specColor, s.oneMinusReflectivity, s.oneMinusRoughness, s.normalWorld, -s.eyeVec, occlusion, gi);
 	c.rgb += Emission(i.tex.xy);
 
-	s.alpha = BlendEdges(i.screenPos);
-
 	UNITY_APPLY_FOG(i.fogCoord, c.rgb);
 
-	half3 mask = tex2Dproj(_WaterMask, UNITY_PROJ_COORD(i.screenPos));
-#if _DISPLACED_VOLUME
-	s.alpha *= mask.y;
-#else
-	if (LinearEyeDepthHalf(i.screenPos.z / i.screenPos.w) <= mask.x)
-		s.alpha *= 1.0 - mask.z;
-#endif
-
-	clip(s.alpha - 0.006);
-
-	return OutputForward (c, s.alpha);
+	return OutputForward (c, alpha);
 }
 
 // ------------------------------------------------------------------
@@ -459,14 +439,12 @@ struct VertexOutputForwardAdd
 	half4 tex							: TEXCOORD0;
 	half4 eyeVec 						: TEXCOORD1;
 	//half4 tangentToWorldAndLightDir[3]	: TEXCOORD2;	// [3x3:tangentToWorld | 1x3:lightDir]
-	half4 lightDir						: TEXCOORD2;
+	half4 lightDir						: TEXCOORD2;			// w - unused
 
 	LIGHTING_COORDS(3,4)
-	UNITY_FOG_COORDS(5)
+	float4 fogCoord						: TEXCOORD5;
 
-#if _GERSTNER_WAVES || _DISPLACED_VOLUME
-	half3 normal						: TEXCOORD6;
-#endif
+	half4 pack1							: TEXCOORD6;			// gerstner: xy - normals, displaced volume: xyz - normals, non displaced volume: zw - fft uv 2
 
 	half4 screenPos						: TEXCOORD7;
 	half4 pack0							: TEXCOORD8;			// xy - global maps uv, zw - local maps uv
@@ -481,22 +459,21 @@ VertexOutputForwardAdd vertForwardAdd (VertexInput v)
 	half2 uv2 = half2(posWorld.xz);
 
 	half2 normal;
-	float2 fftUV;
+	float4 fftUV;
+	float4 fftUV2;
 	float3 displacement;
-	half mask;
-	TransformVertex(posWorld, normal, fftUV, displacement, mask);
+	TransformVertex(posWorld, normal, fftUV, fftUV2, displacement);
 
-	#if _GERSTNER_WAVES
-		o.normal.xy = normal * _DisplacementNormalsIntensity;
+	#if _WAVES_GERSTNER
+		o.pack1.xy = normal * _DisplacementNormalsIntensity;
 	#elif _DISPLACED_VOLUME
-		o.normal = UnityObjectToWorldNormal(v.normal);		// use mesh normals
+		o.pack1.xyz = UnityObjectToWorldNormal(v.normal);		// use mesh normals
 	#endif
 
-	#if _FFT_WAVES_SLOPE
-		o.pack0.xy = fftUV;
+	#if _WAVES_FFT_SLOPE
+		o.pack0.xy = fftUV.xy;
+		o.pack1.zw = fftUV.zw;
 	#endif
-
-	o.eyeVec.w = mask;
 
 	o.tex = TexCoords(uv2, uv2);
 
@@ -504,7 +481,6 @@ VertexOutputForwardAdd vertForwardAdd (VertexInput v)
 
 	o.screenPos = ComputeScreenPos(o.pos);
 	o.eyeVec.xyz = NormalizePerVertexNormal(posWorld.xyz - _WorldSpaceCameraPos);
-	o.lightDir.w = length(posWorld.xyz - _WorldSpaceCameraPos);
 	half3 normalWorld = normalize(half3(normal.x, 1.0, normal.y));
 	
 	//We need this for shadow receving
@@ -517,35 +493,33 @@ VertexOutputForwardAdd vertForwardAdd (VertexInput v)
 	o.lightDir.xyz = lightDir;
 	
 	UNITY_TRANSFER_FOG(o,o.pos);
+	o.fogCoord.yzw = posWorld;
 	return o;
 }
 
 half4 fragForwardAdd (VertexOutputForwardAdd i) : SV_Target
 {
-	half3 posWorld = _WorldSpaceCameraPos + NormalizePerPixelNormal(i.eyeVec) * i.lightDir.w;
+	half alpha = 1;
+
+	UnderwaterClip(i.screenPos);
+	float3 posWorld = i.fogCoord.yzw;
+	MaskWater(alpha, i.screenPos, posWorld);
+
+#if SHADER_TARGET >= 30
+	clip(alpha - 0.006);
+#endif
 
 	WATER_SETUP_ADD_1(i, s)
 	FRAGMENT_SETUP_FWDADD(s)
-	WATER_SETUP2(i, s)
 
 	UnityLight light = AdditiveLight (s.normalWorld, IN_LIGHTDIR_FWDADD(i), LIGHT_ATTENUATION(i));
 	UnityIndirect noIndirect = ZeroIndirect ();
 
-	half4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.oneMinusRoughness, 0.0, s.normalWorld, -s.eyeVec, posWorld, light, noIndirect);
+	half4 c = UNITY_BRDF_PBS (s.diffColor, s.specColor, s.oneMinusReflectivity, s.oneMinusRoughness, 0.0, s.normalWorld, -s.eyeVec, posWorld, light, noIndirect, 1);
 	
 	UNITY_APPLY_FOG_COLOR(i.fogCoord, c.rgb, half4(0,0,0,0)); // fog towards black in additive pass
 
-	half3 mask = tex2Dproj(_WaterMask, UNITY_PROJ_COORD(i.screenPos));
-#if _DISPLACED_VOLUME
-	s.alpha *= mask.y;
-#else
-	if (LinearEyeDepthHalf(i.screenPos.z / i.screenPos.w) <= mask.x)
-		s.alpha *= 1.0 - mask.z;
-#endif
-
-	clip(s.alpha - 0.006);
-
-	return OutputForward (c, s.alpha);
+	return OutputForward (c, alpha);
 }
 			
 #endif // UNITY_STANDARD_CORE_INCLUDED

@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/Blur (UnderwaterMask)"
+Shader "PlayWay Water/Utilities/Blur (UnderwaterMask)"
 {
 	Properties
 	{

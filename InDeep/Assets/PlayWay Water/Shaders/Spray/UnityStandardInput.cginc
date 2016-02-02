@@ -30,7 +30,12 @@ float4		_DetailAlbedoMap_ST;
 sampler2D	_BumpMap;
 half		_BumpScale;
 
-sampler2D	_WaterMask;
+sampler2D	_SubtractiveMask;
+sampler2D	_UnderwaterMask;
+
+// smooth particles
+sampler2D_float _CameraDepthTexture;
+float _InvFade;
 
 sampler2D	_DetailMask;
 sampler2D	_DetailNormalMap;

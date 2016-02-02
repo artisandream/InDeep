@@ -127,38 +127,40 @@ half3 Emission(half2 uv)
 #endif
 }
 
-#ifdef _NORMALMAP
-half2 NormalInTangentSpace(half4 texcoords, half3 i_posWorld, half3 eyeVec, half2 localMapsUv)
+half2 NormalInTangentSpace(half4 texcoords, half3 i_posWorld, half3 eyeVec, half2 localMapsUv, half2 gerstner)
 {
+#ifdef _NORMALMAP
 #if defined(UNITY_NO_DXT5nm)
 	half2 normalTangent = tex2D(_BumpMap, texcoords.xy).xy * _BumpScale.x + tex2D(_BumpMap, texcoords.zw).xy * _BumpScale.y + _BumpScale.z;
 #else
 	half4 normalTangent = tex2D(_BumpMap, texcoords.xy) * _BumpScale.x + tex2D(_BumpMap, texcoords.zw) * _BumpScale.y;
 	normalTangent.xy = normalTangent.wy + _BumpScale.z;
 #endif
+#else
+	half2 normalTangent = 0;
+#endif
 
-#if _FFT_WAVES_SLOPE
-	#if SHADER_TARGET >= 30
-		// fade fft normal at grazing angles at a distance
-		half fadeFactor = _DistantFadeFactors.x + globalWaterData.depth * _DistantFadeFactors.y;
-		fadeFactor *= 1.0 - abs(eyeVec.y);
-		fadeFactor = max(1, fadeFactor);
-	#else
-		half fadeFactor = 1.0;			// should compile out
-	#endif
+#if _WAVES_FFT_SLOPE
+	half4 uv1 = globalWaterData.fftUV.xyxy * _WaterTileSizeScales.yyzz;
+	fixed2 fftWavesNormal = tex2D(_GlobalNormalMap, globalWaterData.fftUV).xy * globalWaterData.totalMask.x;
+	fftWavesNormal += tex2D(_GlobalNormalMap, globalWaterData.fftUV2).zw * globalWaterData.totalMask.y;
+	fftWavesNormal += tex2D(_GlobalNormalMap1, uv1.xy).xy * globalWaterData.totalMask.z;
+	fftWavesNormal += tex2D(_GlobalNormalMap1, uv1.zw).zw;
+	normalTangent.xy += fftWavesNormal * _DisplacementNormalsIntensity;
+#endif
 
-	half2 fftWavesNormal = tex2D(_GlobalNormalMap, globalWaterData.fftUV).xy;
-	normalTangent.xy += fftWavesNormal * _DisplacementNormalsIntensity / fadeFactor;
+#if _WAVES_GERSTNER
+	normalTangent.xy += gerstner;
 #endif
 
 #if _WATER_OVERLAYS
-	half2 overlayNormal = tex2D(_LocalNormalMap, localMapsUv).xy;
-	normalTangent.xy += overlayNormal * _DisplacementNormalsIntensity;
+	half4 overlayNormal = tex2D(_LocalNormalMap, localMapsUv);
+	normalTangent.xy *= overlayNormal.w;
+	normalTangent.xy += overlayNormal.xy * _DisplacementNormalsIntensity;
 #endif
 
 	return normalTangent.xy;
 }
-#endif
 
 half4 Parallax (half4 texcoords, half3 viewDir)
 {

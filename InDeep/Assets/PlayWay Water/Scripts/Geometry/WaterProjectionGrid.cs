@@ -30,7 +30,7 @@ namespace PlayWay.Water
 			water.SetKeyword("_PROJECTION_GRID", false);
 		}
 
-		override public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, int vertexCount)
+		override public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, int vertexCount, bool volume)
 		{
 			int pixelWidth = camera.pixelWidth;
 			int pixelHeight = camera.pixelHeight;
@@ -46,6 +46,7 @@ namespace PlayWay.Water
 			float verticesPerPixel = (float)vertexCount / (pixelWidth * pixelHeight);
 
 			water.WaterMaterial.SetMatrix("_InvViewMatrix", camera.cameraToWorldMatrix);
+			water.WaterBackMaterial.SetMatrix("_InvViewMatrix", camera.cameraToWorldMatrix);
 
 			if(!cache.TryGetValue(hash, out cachedMeshSet))
 				cache[hash] = cachedMeshSet = new CachedMeshSet(CreateMeshes(Mathf.RoundToInt(pixelWidth * verticesPerPixel), Mathf.RoundToInt(pixelHeight * verticesPerPixel)));
@@ -53,7 +54,7 @@ namespace PlayWay.Water
 			return cachedMeshSet.meshes;
 		}
 		
-		override protected Mesh[] CreateMeshes(int vertexCount)
+		override protected Mesh[] CreateMeshes(int vertexCount, bool volume)
 		{
 			throw new System.InvalidOperationException();
 		}
@@ -89,7 +90,7 @@ namespace PlayWay.Water
 
 					if(vertexIndex == 65000)
 					{
-						var mesh = CreateMesh(vertices.ToArray(), indices.ToArray(), string.Format("Projection Grid {0}x{1} - {2}", verticesX, verticesY, meshIndex.ToString("00")));
+						var mesh = CreateMesh(vertices.ToArray(), indices.ToArray(), string.Format("Projection Grid {0}x{1} - {2}", verticesX, verticesY, meshIndex.ToString("00")), false);
 						mesh.bounds = new Bounds(Vector3.zero, new Vector3(100000.0f, 0.2f, 100000.0f));
 						meshes.Add(mesh);
 
@@ -108,7 +109,7 @@ namespace PlayWay.Water
 
 			if(vertexIndex != 0)
 			{
-				var mesh = CreateMesh(vertices.ToArray(), indices.ToArray(), string.Format("Projection Grid {0}x{1} - {2}", verticesX, verticesY, meshIndex.ToString("00")));
+				var mesh = CreateMesh(vertices.ToArray(), indices.ToArray(), string.Format("Projection Grid {0}x{1} - {2}", verticesX, verticesY, meshIndex.ToString("00")), false);
 				mesh.bounds = new Bounds(Vector3.zero, new Vector3(100000.0f, 0.2f, 100000.0f));
 				meshes.Add(mesh);
 			}

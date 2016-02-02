@@ -1,11 +1,13 @@
-﻿#include "UnityCG.cginc"
+#include "UnityCG.cginc"
 #include "UnityStandardCore.cginc"
 
 struct v2f
 {
 	float4 pos			: SV_POSITION;
-	float2 depth		: TEXCOORD0;
-	//float4 screenPos	: TEXCOORD1;
+	float4 screenPos		: TEXCOORD0;
+#if _CLIP_ABOVE
+	float3 worldPos		: TEXCOORD1;
+#endif
 };
 
 struct VertexInput2
@@ -20,25 +22,36 @@ v2f vert(VertexInput2 vi)
 	float4 posWorld = GET_WORLD_POS(vi.vertex);
 
 	half2 normal;
-	float2 fftUV;
+	float4 fftUV;
+	float4 fftUV2;
 	float3 displacement;
-	half mask;
-	TransformVertex(posWorld, normal, fftUV, displacement, mask);
+	TransformVertex(posWorld, normal, fftUV, fftUV2, displacement);
 
 	o.pos = mul(UNITY_MATRIX_VP, posWorld);
-	//o.screenPos = ComputeScreenPos(o.pos);
-	o.depth = o.pos.zw;
+	o.screenPos = ComputeScreenPos(o.pos);
+
+#if _CLIP_ABOVE
+	o.worldPos = posWorld.xyz;
+#endif
 
 	return o;
 }
 
 float4 frag(v2f i) : SV_Target
 {
-	//float currentDepth = SAMPLE_DEPTH_TEXTURE_PROJ(_CameraDepthTexture, UNITY_PROJ_COORD(i.screenPos));
-	float depth = i.depth.x / i.depth.y;
+	half alpha;
 
-	//clip(currentDepth - depth);
+#if _CLIP_ABOVE
+	MaskWater(alpha, i.screenPos, i.worldPos);
+#else
+	MaskWater(alpha, i.screenPos, 0);
+#endif
 
-	//UNITY_OUTPUT_DEPTH(i);
-	return depth;
+	clip(alpha - 0.006);
+
+//#if defined(UNITY_MIGHT_NOT_HAVE_DEPTH_TEXTURE)
+	return i.screenPos.z / i.screenPos.w;
+//#else
+//	return 0;
+//#endif
 }

@@ -1,4 +1,7 @@
 ﻿using UnityEngine;
+#if WATER_SIMD
+using Mono.Simd;
+#endif
 
 namespace PlayWay.Water
 {
@@ -8,14 +11,19 @@ namespace PlayWay.Water
 	public class FastMath
 	{
 		static private float PIx2 = 2.0f * Mathf.PI;
-		static private float[] sines;
-		static private float[] cosines;
+		static public float[] sines;
+		static public float[] cosines;
 
 		static FastMath()
 		{
+			PrecomputeFastSines();
+        }
+
+		static private void PrecomputeFastSines()
+		{
 			sines = new float[2048];
 
-			const float p = Mathf.PI * 2 / 2048;
+			const float p = Mathf.PI * 2.0f / 2048.0f;
 
 			for(int i = 0; i < 2048; ++i)
 				sines[i] = Mathf.Sin(i * p);
@@ -24,6 +32,37 @@ namespace PlayWay.Water
 
 			for(int i = 0; i < 2048; ++i)
 				cosines[i] = Mathf.Cos(i * p);
+		}
+
+		static private float[] PrecomputeTrochoid(float horizontalDisplacementScale)
+		{
+			const float p = Mathf.PI * 2.0f / 4096.0f;
+			const float toHeightIndex = 256.0f / (Mathf.PI * 2.0f);
+
+			float[] trochoidOffsets = new float[257];
+			float[] trochoidHeight = new float[256];
+
+			for(int i = 0; i < 256; ++i)
+				trochoidHeight[i] = float.PositiveInfinity;
+
+			for(int i = 0; i < 4096; ++i)
+			{
+				float offset = i * p;
+				float d = Mathf.Cos(offset) * horizontalDisplacementScale;
+				float h = Mathf.Sin(offset);
+
+				int index = Mathf.RoundToInt((offset + d) * toHeightIndex) & 255;
+
+				if(h < trochoidHeight[index])
+				{
+					trochoidHeight[index] = h;
+					trochoidOffsets[index] = d;
+                }
+			}
+
+			trochoidOffsets[256] = trochoidOffsets[0];
+
+			return trochoidOffsets;
 		}
 
 		/// <summary>
@@ -219,5 +258,219 @@ namespace PlayWay.Water
 		{
 			return Mathf.Sqrt(-2.0f * Mathf.Log(u1)) * Mathf.Sin(PIx2 * u2);
 		}
+
+		static public Vector2 Rotate(Vector2 vector, float angle)
+		{
+			float s, c;
+			SinCos2048(angle, out s, out c);
+
+			return new Vector2(
+					vector.x * c + vector.y * s,
+					vector.x * s + vector.y * c
+				);
+		}
+
+		static public float Interpolate(float a0, float a1, float a2, float a3, float b0, float b1, float b2, float b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			float A0 = a0 * fx + a1 * invFx;
+			float A1 = a2 * fx + a3 * invFx;
+			float A = A0 * fy + A1 * invFy;
+
+			float B0 = b0 * fx + b1 * invFx;
+			float B1 = b2 * fx + b3 * invFx;
+			float B = B0 * fy + B1 * invFy;
+
+			return A * (1.0f - t) + B * t;
+		}
+		
+		// Passing by ref is noticeably faster in this case
+		static public Vector2 Interpolate(ref Vector2 a0, ref Vector2 a1, ref Vector2 a2, ref Vector2 a3, ref Vector2 b0, ref Vector2 b1, ref Vector2 b2, ref Vector2 b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			if(fx != 0.0f)
+			{
+				float propX = invFx / fx;
+
+				float A0x = a0.x + a1.x * propX;
+				float A0y = a0.y + a1.y * propX;
+
+				float A1x = a2.x + a3.x * propX;
+				float A1y = a2.y + a3.y * propX;
+
+				float Ax = A0x * fy + A1x * invFy;
+				float Ay = A0y * fy + A1y * invFy;
+
+				float B0x = b0.x + b1.x * propX;
+				float B0y = b0.y + b1.y * propX;
+
+				float B1x = b2.x + b3.x * propX;
+				float B1y = b2.y + b3.y * propX;
+
+				float Bx = B0x * fy + B1x * invFy;
+				float By = B0y * fy + B1y * invFy;
+
+				float invT = (1.0f - t) * fx;
+				t *= fx;
+
+				return new Vector2(Ax * invT + Bx * t, Ay * invT + By * t);
+			}
+			else
+			{
+				float Ax = a1.x * fy + a3.x * invFy;
+				float Ay = a1.y * fy + a3.y * invFy;
+				float Bx = b1.x * fy + b3.x * invFy;
+				float By = b1.y * fy + b3.y * invFy;
+
+				float invT = (1.0f - t);
+
+				return new Vector2(Ax * invT + Bx * t, Ay * invT + By * t);
+			}
+		}
+		
+		static public Vector2 Interpolate(Vector2 a0, Vector2 a1, Vector2 a2, Vector2 a3, Vector2 b0, Vector2 b1, Vector2 b2, Vector2 b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			Vector2 A0 = a0 * fx + a1 * invFx;
+			Vector2 A1 = a2 * fx + a3 * invFx;
+			Vector2 A = A0 * fy + A1 * invFy;
+
+			Vector2 B0 = b0 * fx + b1 * invFx;
+			Vector2 B1 = b2 * fx + b3 * invFx;
+			Vector2 B = B0 * fy + B1 * invFy;
+
+			return A * (1.0f - t) + B * t;
+		}
+
+		static public Vector3 Interpolate(Vector3 a0, Vector3 a1, Vector3 a2, Vector3 a3, Vector3 b0, Vector3 b1, Vector3 b2, Vector3 b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			Vector3 A0 = a0 * fx + a1 * invFx;
+			Vector3 A1 = a2 * fx + a3 * invFx;
+			Vector3 A = A0 * fy + A1 * invFy;
+
+			Vector3 B0 = b0 * fx + b1 * invFx;
+			Vector3 B1 = b2 * fx + b3 * invFx;
+			Vector3 B = B0 * fy + B1 * invFy;
+
+			return A * (1.0f - t) + B * t;
+		}
+
+		static public Vector4 Interpolate(ref Vector4 a0, ref Vector4 a1, ref Vector4 a2, ref Vector4 a3, ref Vector4 b0, ref Vector4 b1, ref Vector4 b2, ref Vector4 b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			if(fx != 0.0f)
+			{
+				float propX = invFx / fx;
+
+				float A0x = a0.x + a1.x * propX;
+				float A0y = a0.y + a1.y * propX;
+				float A0z = a0.z + a1.z * propX;
+				float A0w = a0.w + a1.w * propX;
+
+				float A1x = a2.x + a3.x * propX;
+				float A1y = a2.y + a3.y * propX;
+				float A1z = a2.z + a3.z * propX;
+				float A1w = a2.w + a3.w * propX;
+
+				float Ax = A0x * fy + A1x * invFy;
+				float Ay = A0y * fy + A1y * invFy;
+				float Az = A0z * fy + A1z * invFy;
+				float Aw = A0w * fy + A1w * invFy;
+
+				float B0x = b0.x + a1.x * propX;
+				float B0y = b0.y + a1.y * propX;
+				float B0z = b0.z + a1.z * propX;
+				float B0w = b0.w + a1.w * propX;
+
+				float B1x = b2.x + a3.x * propX;
+				float B1y = b2.y + a3.y * propX;
+				float B1z = b2.z + a3.z * propX;
+				float B1w = b2.w + a3.w * propX;
+
+				float Bx = B0x * fy + B1x * invFy;
+				float By = B0y * fy + B1y * invFy;
+				float Bz = B0z * fy + B1z * invFy;
+				float Bw = B0w * fy + B1w * invFy;
+
+				float invT = (1.0f - t) * fx;
+				t *= fx;
+
+				return new Vector4(Ax * invT + Bx * t, Ay * invT + By * t, Az * invT + Bz * t, Aw * invT + Bw * t);
+			}
+			else
+			{
+				float Ax = a1.x * fy + a3.x * invFy;
+				float Ay = a1.y * fy + a3.y * invFy;
+				float Az = a1.z * fy + a3.z * invFy;
+				float Aw = a1.w * fy + a3.w * invFy;
+				float Bx = b1.x * fy + b3.x * invFy;
+				float By = b1.y * fy + b3.y * invFy;
+				float Bz = b1.z * fy + b3.z * invFy;
+				float Bw = b1.w * fy + b3.w * invFy;
+
+				float invT = (1.0f - t) * fx;
+				t *= fx;
+
+				return new Vector4(Ax * invT + Bx * t, Ay * invT + By * t, Az * invT + Bz * t, Aw * invT + Bw * t);
+			}
+		}
+
+		static public Vector4 Interpolate(Vector4 a0, Vector4 a1, Vector4 a2, Vector4 a3, Vector4 b0, Vector4 b1, Vector4 b2, Vector4 b3, float fx, float invFx, float fy, float invFy, float t)
+		{
+			if(fx != 0.0f)
+			{
+				float propX = invFx / fx;
+
+				Vector4 A0 = a0 + a1 * propX;
+				Vector4 A1 = a2 + a3 * propX;
+				Vector4 A = A0 * fy + A1 * invFy;
+
+				Vector4 B0 = b0 + b1 * propX;
+				Vector4 B1 = b2 + b3 * propX;
+				Vector4 B = B0 * fy + B1 * invFy;
+
+				return A * ((1.0f - t) * fx) + B * (t * fx);
+			}
+			else
+			{
+				Vector4 A = a1 * fy + a3 * invFy;
+				Vector4 B = b1 * fy + b3 * invFy;
+				return A * (1.0f - t) + B * t;
+			}
+		}
+
+#if WATER_SIMD
+		static public Vector4f Interpolate(Vector4f a0, Vector4f a1, Vector4f a2, Vector4f a3, Vector4f b0, Vector4f b1, Vector4f b2, Vector4f b3, float fxf, float invFxf, float fyf, float invFyf, float tf)
+		{
+			if(fxf != 0.0f)
+			{
+				Vector4f propX = new Vector4f(invFxf / fxf);
+				Vector4f fy = new Vector4f(fyf);
+				Vector4f invFy = new Vector4f(invFyf);
+
+				Vector4f A0 = a0 + a1 * propX;
+				Vector4f A1 = a2 + a3 * propX;
+				Vector4f A = A0 * fy + A1 * invFy;
+
+				Vector4f B0 = b0 + b1 * propX;
+				Vector4f B1 = b2 + b3 * propX;
+				Vector4f B = B0 * fy + B1 * invFy;
+
+				Vector4f t = new Vector4f(tf * fxf);
+				Vector4f invT = new Vector4f((1.0f - tf) * fxf);
+
+				return A * invT + B * t;
+			}
+			else
+			{
+				Vector4f fy = new Vector4f(fyf);
+				Vector4f invFy = new Vector4f(invFyf);
+
+				Vector4f A = a1 * fy + a3 * invFy;
+				Vector4f B = b1 * fy + b3 * invFy;
+
+				Vector4f t = new Vector4f(tf);
+				Vector4f invT = new Vector4f(1.0f - tf);
+
+				return A * invT + B * t;
+			}
+		}
+#endif
 	}
 }

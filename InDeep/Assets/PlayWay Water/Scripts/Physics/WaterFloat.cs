@@ -5,6 +5,9 @@ namespace PlayWay.Water
 	public class WaterFloat : MonoBehaviour
 	{
 		[SerializeField]
+		private Water water;
+
+		[SerializeField]
 		private float heightBonus = 0.0f;
 
 		[Range(0.04f, 1.0f)]
@@ -12,18 +15,22 @@ namespace PlayWay.Water
 		private float precision = 0.2f;
 
 		[SerializeField]
-		private SpectrumSample.DisplacementMode displacementMode = SpectrumSample.DisplacementMode.Displacement;
+		private DisplacementMode displacementMode = DisplacementMode.Displacement;
 		
-		private SpectrumSample sample;
+		private WaterSample sample;
 
 		private Vector3 initialPosition;
+		private Vector3 previousPosition;
 
 		void Start()
 		{
 			initialPosition = transform.position;
+			previousPosition = initialPosition;
 
-			var water = FindObjectOfType<Water>();
-			sample = new SpectrumSample(water, displacementMode, precision);
+			if(water == null)
+				water = FindObjectOfType<Water>();
+
+			sample = new WaterSample(water, (WaterSample.DisplacementMode)displacementMode, precision);
 		}
 
 		void OnDisable()
@@ -33,9 +40,19 @@ namespace PlayWay.Water
 
 		void LateUpdate()
 		{
-			Vector3 displaced = sample.ComputeDisplaced(initialPosition.x, initialPosition.z);
+			initialPosition += transform.position - previousPosition;
+
+			Vector3 displaced = sample.GetAndReset(initialPosition.x, initialPosition.z, WaterSample.ComputationsMode.Stabilized);
 			displaced.y += heightBonus;
             transform.position = displaced;
+
+			previousPosition = displaced;
+        }
+
+		public enum DisplacementMode
+		{
+			Height,
+			Displacement,
 		}
 	}
 }

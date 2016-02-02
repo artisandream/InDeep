@@ -7,7 +7,7 @@ namespace PlayWay.Water
 	abstract public class WaterPrimitiveBase
 	{
 		protected Water water;
-		protected Dictionary<int, CachedMeshSet> cache = new Dictionary<int, CachedMeshSet>();
+		protected Dictionary<int, CachedMeshSet> cache = new Dictionary<int, CachedMeshSet>(Int32EqualityComparer.Default);
 		private List<int> keysToRemove;
 
 		public void Dispose()
@@ -46,15 +46,20 @@ namespace PlayWay.Water
 			
 		}
 
-		virtual public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, int vertexCount)
+		virtual public Mesh[] GetTransformedMeshes(Camera camera, out Matrix4x4 matrix, int vertexCount, bool volume)
 		{
-			matrix = GetMatrix(camera);
+			if(camera != null)
+				matrix = GetMatrix(camera);
+			else
+				matrix = Matrix4x4.identity;
 
 			CachedMeshSet cachedMeshSet;
 			int hash = vertexCount;
 
+			if(volume) hash = -hash;
+
 			if(!cache.TryGetValue(hash, out cachedMeshSet))
-				cache[hash] = cachedMeshSet = new CachedMeshSet(CreateMeshes(vertexCount));
+				cache[hash] = cachedMeshSet = new CachedMeshSet(CreateMeshes(vertexCount, volume));
 			else
 				cachedMeshSet.Update();
 
@@ -67,10 +72,13 @@ namespace PlayWay.Water
 
 			if(keysToRemove == null)
 				keysToRemove = new List<int>();
-			
-			foreach(var kv in cache)
+
+			var enumerator = cache.GetEnumerator();
+			while(enumerator.MoveNext())
 			{
-				if(currentFrame - kv.Value.lastFrameUsed > 3)
+				var kv = enumerator.Current;
+
+                if(currentFrame - kv.Value.lastFrameUsed > 27)			// waterprimitivebase updates run every 9 frame
 				{
 					keysToRemove.Add(kv.Key);
 
@@ -84,22 +92,22 @@ namespace PlayWay.Water
 				}
 			}
 
-			foreach(int key in keysToRemove)
-				cache.Remove(key);
+			for(int i=0; i<keysToRemove.Count; ++i)
+				cache.Remove(keysToRemove[i]);
 
 			keysToRemove.Clear();
 		}
 
 		abstract protected Matrix4x4 GetMatrix(Camera camera);
-		abstract protected Mesh[] CreateMeshes(int vertexCount);
+		abstract protected Mesh[] CreateMeshes(int vertexCount, bool volume);
 
-		protected Mesh CreateMesh(Vector3[] vertices, int[] indices, string name)
+		protected Mesh CreateMesh(Vector3[] vertices, int[] indices, string name, bool triangular = false)
 		{
 			var mesh = new Mesh();
 			mesh.hideFlags = HideFlags.DontSave;
 			mesh.name = name;
 			mesh.vertices = vertices;
-			mesh.SetIndices(indices, MeshTopology.Quads, 0);
+			mesh.SetIndices(indices, triangular ? MeshTopology.Triangles : MeshTopology.Quads, 0);
 			mesh.RecalculateBounds();
 			mesh.UploadMeshData(true);
 

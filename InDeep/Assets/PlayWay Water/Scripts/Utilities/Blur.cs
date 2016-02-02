@@ -9,11 +9,12 @@ namespace PlayWay.Water
 		[SerializeField]
 		private Shader blurShader;
 
+		[Range(0, 5)]
 		[SerializeField]
 		private int iterations = 1;
 
 		[SerializeField]
-		private float size = 0.008f;
+		private float size = 0.005f;
 
 		private Material blurMaterial;
 
@@ -37,12 +38,21 @@ namespace PlayWay.Water
             set { size = value; }
         }
 
+		public float TotalSize
+		{
+			get { return size * iterations; }
+			set { size = value / iterations; }
+		}
+
         public Material BlurMaterial
 		{
 			get
 			{
 				if(blurMaterial == null)
 				{
+					if(blurShader == null)
+						Validate("PlayWay Water/Utilities/Blur");
+
 					blurMaterial = new Material(blurShader);
 					blurMaterial.hideFlags = HideFlags.DontSave;
 					offsetHash = Shader.PropertyToID("_Offset");

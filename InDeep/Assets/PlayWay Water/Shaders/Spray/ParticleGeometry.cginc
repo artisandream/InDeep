@@ -1,4 +1,4 @@
-﻿
+
 struct ParticleData
 {
 	float3 position;
@@ -8,9 +8,9 @@ struct ParticleData
 	float maxIntensity;
 };
 
-float _TileSize;
 half4 _ParticleParams;
 half3 _CameraUp;
+uint _ParticleOffset;
 
 StructuredBuffer<ParticleData> _Particles : register(t0);
 
@@ -26,11 +26,13 @@ struct vs_in {
 
 vs_out geomVert (vs_in vi)			// vs_out geomVert (uint id : SV_VertexID)
 {
+	uint particleId = vi.id + _ParticleOffset;
+
 	vs_out o;
-	o.pos = float4(_Particles[vi.id].position, 1);
-	o.params.xy = _Particles[vi.id].lifetime.xy;
-	o.params.z = _Particles[vi.id].offset;
-	o.params.w = _Particles[vi.id].maxIntensity;
+	o.pos = float4(_Particles[particleId].position, 1);
+	o.params.xy = _Particles[particleId].lifetime.xy;
+	o.params.z = _Particles[particleId].offset;
+	o.params.w = _Particles[particleId].maxIntensity;
 	//o.pos = vi.vertex;
 	return o;
 }
@@ -106,20 +108,17 @@ void geom (point vs_out input[1], inout TriangleStream<VertexOutputForwardBase> 
 	float3 position = input[0].pos;
 	half maxIntensity = input[0].params.w;
 
-	position.xz *= _TileSize;
-	//position = half4(-7.28, 7.4, 4.08, 1.0);
-	position = mul(_Object2World, float4(position, 1)).xyz;
-
 	half remainingLife = input[0].params.x;
 	half lifetime = input[0].params.y - remainingLife;
 
-	half alpha = min(lifetime * _ParticleParams.y, 1.0) * maxIntensity;
+	half alpha = min(sqrt(lifetime) * _ParticleParams.y, 1.0) * maxIntensity;
 	half texBlend = lifetime / input[0].params.y;
 
 	texBlend = frac(input[0].params.z + texBlend * 3);
 
 	size *= pow(lifetime, 0.75) * maxIntensity;
-	alpha *= min(1, remainingLife * 0.25);
+	alpha *= min(1, remainingLife);
+	alpha = 1;
 
 	SpawnBillboard(position, size, alpha, texBlend, outStream);
 }

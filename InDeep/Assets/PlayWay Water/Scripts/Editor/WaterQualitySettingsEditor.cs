@@ -149,6 +149,7 @@ namespace PlayWay.Water
 				EditorGUILayout.PropertyField(currentLevelProp.FindPropertyRelative("maxVertexCount"));
 				EditorGUILayout.PropertyField(currentLevelProp.FindPropertyRelative("maxTesselatedVertexCount"));
 				EditorGUILayout.PropertyField(currentLevelProp.FindPropertyRelative("allowAlphaBlending"));
+				EditorGUILayout.PropertyField(currentLevelProp.FindPropertyRelative("allowHighQualityReflections"));
             }
 
 			EndGroup();

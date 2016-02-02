@@ -7,6 +7,7 @@ namespace PlayWay.Water
 		void OnWaterRender(Camera camera);
 		void OnWaterPostRender(Camera camera);
 
-		void ValidateNow(Water water, WaterQualityLevel qualityLevel);
+		void BuildShaderVariant(ShaderVariant variant, Water water, WaterQualityLevel qualityLevel);
+        void UpdateMaterial(Water water, WaterQualityLevel qualityLevel);
 	}
 }

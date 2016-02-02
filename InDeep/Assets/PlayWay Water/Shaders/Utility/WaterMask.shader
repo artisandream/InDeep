@@ -1,8 +1,9 @@
-﻿Shader "PlayWay Water/Utilities/Water Mask"
+Shader "PlayWay Water/Utilities/Water Mask"
 {
 	Properties
 	{
-		_Intensity ("Intensity", Float) = 1.0
+		_IntensityInv("Intensity Invert", Float) = 0.0
+		_WaterId ("", Float) = 128
 	}
 
 	CGINCLUDE
@@ -19,7 +20,8 @@
 		float4 pos	: SV_POSITION;
 	};
 
-	half _Intensity;
+	half _IntensityInv;
+	float _WaterId;
 
 	VertexOutput vert (VertexInput vi)
 	{
@@ -29,9 +31,9 @@
 		return vo;
 	}
 
-	half4 frag(VertexOutput vo) : SV_Target
+	float4 frag(VertexOutput vo) : SV_Target
 	{
-		return half4(1000000, 0, _Intensity, 0);
+		return float4(_WaterId, 1000000, 0, _IntensityInv);
 	}
 
 	ENDCG
@@ -42,9 +44,8 @@
 
 		Pass
 		{
-			ZTest Always Cull Off ZWrite Off
-			Blend One One
-			ColorMask RB
+			ZTest Less Cull Off ZWrite On
+			Blend Off
 
 			CGPROGRAM
 

@@ -11,6 +11,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 14feec8436f7e4b4aa9ac00b327bb2c0, type: 3}
   m_Name: WaterProjectSettings
   m_EditorClassIdentifier: 
-  waterVolumesLayer: 20
-  waterMasksEnabled: 0
-  waterMasksLayer: 21
+  waterLayer: 4
+  waterTempLayer: 21
+  physicsThreads: 1
+  physicsThreadsPriority: 4
+  allowCpuFFT: 1
+  allowFloatingPointMipMaps: 1
+  debugPhysics: 0

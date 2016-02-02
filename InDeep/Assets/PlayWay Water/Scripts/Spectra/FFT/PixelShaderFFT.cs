@@ -11,10 +11,9 @@ namespace PlayWay.Water
 
 		private int butterflyTexProperty;
 		private int butterflyPassProperty;
-
 		private TemporaryRenderTexture rt1;
 		private TemporaryRenderTexture rt2;
-
+		
 		public PixelShaderFFT(Shader fftShader, int resolution, bool highPrecision, bool twoChannels) : base(resolution, highPrecision, twoChannels, false)
 		{
 			material = new Material(fftShader);
@@ -37,39 +36,34 @@ namespace PlayWay.Water
 			material.SetTexture(butterflyTexProperty, Butterfly);
 		}
 
-		override public RenderTexture ComputeFFT(Texture tex)
+		override public void ComputeFFT(Texture tex, RenderTexture target)
 		{
 			using(rt1 = renderTexturesSet.GetTemporary())
 			using(rt2 = renderTexturesSet.GetTemporary())
 			{
-				ComputeFFT(tex, twoChannels ? 2 : 0, false);
-				ComputeFFT(rt1, twoChannels ? 3 : 1, true);
+				ComputeFFT(tex, null, twoChannels ? 2 : 0);
+				ComputeFFT(rt1, target, twoChannels ? 3 : 1);
 			}
-
-			return realOutput;
 		}
 
-		private void ComputeFFT(Texture tex, int passIndex, bool invertLastPass)
+		private void ComputeFFT(Texture tex, RenderTexture target, int passIndex)
 		{
-			material.mainTexture = tex;
 			material.SetFloat(butterflyPassProperty, 0.5f / (float)numButterfliesPow2);
-			Graphics.Blit(null, rt2, material, passIndex);
+			Graphics.Blit(tex, rt2, material, passIndex);
 
 			SwapRT();
 
 			for(int i = 1; i < numButterflies; ++i)
 			{
-				if(invertLastPass && i == numButterflies - 1)
+				if(target != null && i == numButterflies - 1)
 				{
-					material.mainTexture = rt1;
 					material.SetFloat(butterflyPassProperty, (i + 0.5f) / (float)numButterfliesPow2);
-					Graphics.Blit(null, realOutput, material, passIndex == 1 ? 4 : 5);
+					Graphics.Blit(rt1, target, material, passIndex == 1 ? 4 : 5);
 				}
 				else
 				{
-					material.mainTexture = rt1;
 					material.SetFloat(butterflyPassProperty, (i + 0.5f) / (float)numButterfliesPow2);
-					Graphics.Blit(null, rt2, material, passIndex);
+					Graphics.Blit(rt1, rt2, material, passIndex);
 				}
 
 				SwapRT();

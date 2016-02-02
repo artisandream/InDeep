@@ -1,6 +1,7 @@
 ﻿using UnityEngine;
 using System.Collections.Generic;
 using System;
+using System.Collections;
 
 namespace PlayWay.Water
 {
@@ -9,17 +10,21 @@ namespace PlayWay.Water
 	[AddComponentMenu("Water/Planar Reflections", 1)]
 	public class WaterPlanarReflection : MonoBehaviour, IWaterRenderAware
 	{
+		[HideInInspector]
+		[SerializeField]
+		private Shader utilitiesShader;
+
 		[SerializeField]
 		private Camera reflectionCamera;
 
 		[SerializeField]
 		private bool reflectSkybox = true;
 
-		[Range(1, 6)]
+		[Range(1, 8)]
 		[SerializeField]
 		private int downsample = 2;
 
-		[Range(1, 6)]
+		[Range(1, 8)]
 		[Tooltip("Allows you to use more rational resolution of planar reflections on screens with very high dpi. Planar reflections should be blurred anyway.")]
 		[SerializeField]
 		private int retinaDownsample = 3;
@@ -28,29 +33,21 @@ namespace PlayWay.Water
 		private LayerMask reflectionMask = int.MaxValue;
 
 		[SerializeField]
-		private Blur blur;
-
-		[SerializeField]
-		private Blur nearBlur;
-
-		[Tooltip("Determines, if blur should be depth-based. Makes reflections sharp up-close and blurries them when viewed at a distance (that's what actually happens in real world). Draw-calls heavy.")]
-		[SerializeField]
-		private bool useDepthBlur;
-		
-		[SerializeField]
-		private Shader depthBlurMapShader;
+		private bool highQuality = true;
 
 		[SerializeField]
 		private float clipPlaneOffset = 0.07f;
 
 		private Water water;
-		private RenderTexture currentTarget;
+		private TemporaryRenderTexture currentTarget;
 		private bool systemSupportsHDR;
-        private int finalDivider;
+		private int finalDivider;
 		private int reflectionTexProperty;
+		private bool renderPlanarReflections;
+		private Material utilitiesMaterial;
 
-		private Dictionary<Camera, RenderTexture> temporaryTargets = new Dictionary<Camera, RenderTexture>();
-		
+		private Dictionary<Camera, TemporaryRenderTexture> temporaryTargets = new Dictionary<Camera, TemporaryRenderTexture>();
+
 		void Start()
 		{
 			reflectionTexProperty = Shader.PropertyToID("_PlanarReflectionTex");
@@ -80,27 +77,29 @@ namespace PlayWay.Water
 			}
 		}
 
-		void OnDisable()
-		{
-			water.SetKeyword("_PLANAR_REFLECTIONS", false);
-		}
-
 		void OnEnable()
 		{
 			water = GetComponent<Water>();
-			ValidateNow(water, WaterQualitySettings.Instance.CurrentQualityLevel);
+			water.ProfilesChanged.AddListener(OnProfilesChanged);
+			OnProfilesChanged(water);
+
+			UpdateMaterial(water, WaterQualitySettings.Instance.CurrentQualityLevel);
+
+			WaterQualitySettings.Instance.Changed -= OnQualityChange;
+			WaterQualitySettings.Instance.Changed += OnQualityChange;
+		}
+
+		void OnDisable()
+		{
+			water.InvalidateMaterialKeywords();
+
+			WaterQualitySettings.Instance.Changed -= OnQualityChange;
 		}
 
 		void OnValidate()
 		{
-			if(depthBlurMapShader == null)
-				depthBlurMapShader = Shader.Find("PlayWay Water/Utilities/PlanarReflectionBlurMap");
-
-			if(nearBlur != null)
-			{
-				nearBlur.Validate("PlayWay Water/Utilities/Blur (Near)");
-				blur.Validate("PlayWay Water/Utilities/Blur");
-			}
+			if(utilitiesShader == null)
+				utilitiesShader = Shader.Find("PlayWay Water/Utilities/PlanarReflection - Utilities");
 
 			int finalDivider = Screen.dpi <= 220 ? downsample : retinaDownsample;
 
@@ -112,24 +111,23 @@ namespace PlayWay.Water
 
 			if(reflectionCamera != null)
 				ValidateReflectionCamera();
+
+			UpdateMaterial(GetComponent<Water>(), WaterQualitySettings.Instance.CurrentQualityLevel);
 		}
 
 		void OnDestroy()
 		{
-			if(blur != null)
-				blur.Dispose();
-
 			ClearRenderTextures();
 		}
 
 		void Update()
 		{
-			temporaryTargets.Clear();
-		}
-
+			ClearRenderTextures();
+        }
+		
 		public void OnWaterRender(Camera camera)
 		{
-			if(camera == reflectionCamera || !enabled || !camera.enabled)
+			if(camera == reflectionCamera || !enabled || !camera.enabled || !renderPlanarReflections)
 				return;
 
 			if(!temporaryTargets.TryGetValue(camera, out currentTarget))
@@ -139,18 +137,22 @@ namespace PlayWay.Water
 				var material = water.WaterMaterial;
 
 				if(material != null)
+				{
 					material.SetTexture(reflectionTexProperty, currentTarget);
+					material.SetMatrix("_PlanarReflectionProj", (Matrix4x4.TRS(new Vector3(0.5f, 0.5f, 0.0f), Quaternion.identity, new Vector3(0.5f, 0.5f, 1.0f)) * reflectionCamera.projectionMatrix * reflectionCamera.worldToCameraMatrix));
+					material.SetFloat("_PlanarReflectionMipBias", -Mathf.Log(finalDivider, 2));
+				}
 			}
 		}
 
 		public void OnWaterPostRender(Camera camera)
 		{
-			RenderTexture renderTexture;
+			TemporaryRenderTexture renderTexture;
 
 			if(temporaryTargets.TryGetValue(camera, out renderTexture))
 			{
 				temporaryTargets.Remove(camera);
-				RenderTexture.ReleaseTemporary(renderTexture);
+				renderTexture.Dispose();
 			}
 		}
 
@@ -159,22 +161,6 @@ namespace PlayWay.Water
 			if(!enabled)
 				return;
 
-			SetupReflectionCamera(camera);
-
-			GL.invertCulling = true;
-			reflectionCamera.Render();
-			GL.invertCulling = false;
-
-			ApplyBlur(camera);
-		}
-
-		private void ApplyBlur(Camera camera)
-		{
-			blur.Apply(reflectionCamera.targetTexture);
-		}
-
-		private void SetupReflectionCamera(Camera camera)
-		{
 			if(reflectionCamera == null)
 			{
 				var reflectionCameraGo = new GameObject(name + " Reflection Camera");
@@ -188,18 +174,21 @@ namespace PlayWay.Water
 			reflectionCamera.backgroundColor = new Color(0.0f, 0.0f, 0.0f, 0.0f);
 
 			currentTarget = GetRenderTexture(camera.pixelWidth, camera.pixelHeight);
-			reflectionCamera.targetTexture = currentTarget;
 			temporaryTargets[camera] = currentTarget;
+
+			var target = RenderTexturesCache.GetTemporary(currentTarget.Texture.width, currentTarget.Texture.height, 16, currentTarget.Texture.format, true, false, false);
+			reflectionCamera.targetTexture = target;
+			reflectionCamera.aspect = camera.aspect;
 
 			Vector3 cameraEuler = camera.transform.eulerAngles;
 			reflectionCamera.transform.eulerAngles = new Vector3(-cameraEuler.x, cameraEuler.y, cameraEuler.z);
 			reflectionCamera.transform.position = camera.transform.position;
 
 			Vector3 cameraPosition = camera.transform.position;
-			cameraPosition.y = -cameraPosition.y;
+			cameraPosition.y = transform.position.y - cameraPosition.y;
 			reflectionCamera.transform.position = cameraPosition;
 
-			float d = -Vector3.Dot(Vector3.up, Vector3.zero) - clipPlaneOffset;
+			float d = -transform.position.y - clipPlaneOffset;
 			Vector4 reflectionPlane = new Vector4(0, 1, 0, d);
 
 			Matrix4x4 reflection = Matrix4x4.zero;
@@ -208,7 +197,7 @@ namespace PlayWay.Water
 
 			reflectionCamera.worldToCameraMatrix = camera.worldToCameraMatrix * reflection;
 
-			Vector4 clipPlane = CameraSpacePlane(reflectionCamera, new Vector3(0, 0, 0), new Vector3(0, 1, 0), 1.0f);
+			Vector4 clipPlane = CameraSpacePlane(reflectionCamera, transform.position, new Vector3(0, 1, 0), 1.0f);
 
 			var matrix = camera.projectionMatrix;
 			matrix = CalculateObliqueMatrix(matrix, clipPlane);
@@ -219,6 +208,21 @@ namespace PlayWay.Water
 			reflectionCamera.transform.eulerAngles = new Vector3(-cameraEulerB.x, cameraEulerB.y, cameraEulerB.z);
 
 			reflectionCamera.clearFlags = reflectSkybox ? CameraClearFlags.Skybox : CameraClearFlags.SolidColor;
+
+			GL.invertCulling = true;
+			reflectionCamera.Render();
+			GL.invertCulling = false;
+
+			reflectionCamera.targetTexture = null;
+
+			if(utilitiesMaterial == null)
+			{
+				utilitiesMaterial = new Material(utilitiesShader);
+				utilitiesMaterial.hideFlags = HideFlags.DontSave;
+			}
+
+			Graphics.Blit(target, currentTarget, utilitiesMaterial, 0);
+			target.Dispose();
 		}
 
 		private void ValidateReflectionCamera()
@@ -253,7 +257,7 @@ namespace PlayWay.Water
 
 			return reflectionMat;
 		}
-		
+
 		Vector4 CameraSpacePlane(Camera cam, Vector3 pos, Vector3 normal, float sideSign)
 		{
 			Vector3 offsetPos = pos + normal * clipPlaneOffset;
@@ -277,28 +281,61 @@ namespace PlayWay.Water
 			return projection;
 		}
 
-		private RenderTexture GetRenderTexture(int width, int height)
+		private TemporaryRenderTexture GetRenderTexture(int width, int height)
 		{
-			int adaptedWidth = width / finalDivider;
-			int adaptedHeight = height / finalDivider;
+			int adaptedWidth = Mathf.ClosestPowerOfTwo(width / finalDivider);
+			int adaptedHeight = Mathf.ClosestPowerOfTwo(height / finalDivider);
 
-			var renderTexture = RenderTexture.GetTemporary(adaptedWidth, adaptedHeight, 16, reflectionCamera.hdr && systemSupportsHDR ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGB32, RenderTextureReadWrite.Linear, 1);
-			renderTexture.filterMode = FilterMode.Bilinear;
-			
+			var renderTexture = RenderTexturesCache.GetTemporary(adaptedWidth, adaptedHeight, 0, reflectionCamera.hdr && systemSupportsHDR ? RenderTextureFormat.ARGBHalf : RenderTextureFormat.ARGB32, true, false, true);
+			renderTexture.Texture.filterMode = FilterMode.Trilinear;
+			renderTexture.Texture.wrapMode = TextureWrapMode.Clamp;
+
 			return renderTexture;
 		}
 
 		private void ClearRenderTextures()
 		{
-			foreach(var kv in temporaryTargets)
-				RenderTexture.ReleaseTemporary(kv.Value);
+			var enumerator = temporaryTargets.GetEnumerator();
+			while(enumerator.MoveNext())
+				enumerator.Current.Value.Dispose();
 
 			temporaryTargets.Clear();
 		}
 
-		public void ValidateNow(Water water, WaterQualityLevel qualityLevel)
+		private void OnProfilesChanged(Water water)
 		{
-			water.SetKeyword("_PLANAR_REFLECTIONS", enabled);
+			var profiles = water.Profiles;
+
+			if(profiles == null)
+				return;
+
+			float intensity = 0.0f;
+
+			foreach(var weightedProfile in profiles)
+			{
+				var profile = weightedProfile.profile;
+				float weight = weightedProfile.weight;
+
+				intensity += profile.PlanarReflectionIntensity * weight;
+			}
+
+			renderPlanarReflections = intensity > 0.0f;
+		}
+
+		private void OnQualityChange()
+		{
+			UpdateMaterial(water, WaterQualitySettings.Instance.CurrentQualityLevel);
+		}
+
+		public void UpdateMaterial(Water water, WaterQualityLevel qualityLevel)
+		{
+			
+		}
+
+		public void BuildShaderVariant(ShaderVariant variant, Water water, WaterQualityLevel qualityLevel)
+		{
+			variant.SetWaterKeyword("_PLANAR_REFLECTIONS", enabled && (!highQuality || !qualityLevel.allowHighQualityReflections));
+			variant.SetWaterKeyword("_PLANAR_REFLECTIONS_HQ", enabled && highQuality && qualityLevel.allowHighQualityReflections);
 		}
 	}
 }

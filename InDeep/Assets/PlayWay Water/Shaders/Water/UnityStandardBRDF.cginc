@@ -166,7 +166,8 @@ inline half RoughnessToSpecPower (half roughness)
 #if UNITY_GLOSS_MATCHES_MARMOSET_TOOLBAG2
 	// from https://s3.amazonaws.com/docs.knaldtech.com/knald/1.0.0/lys_power_drops.html
 	half n = 10.0 / log2((1-roughness)*0.968 + 0.03);
-#if defined(SHADER_API_PS3)
+#if defined(SHADER_API_PS3) || defined(SHADER_API_GLES) || defined(SHADER_API_GLES3)
+	// Prevent fp16 overflow when running on platforms where half is actually in use.
 	n = max(n,-255.9370);  //i.e. less than sqrt(65504)
 #endif
 	return n * n;
@@ -174,8 +175,9 @@ inline half RoughnessToSpecPower (half roughness)
 	// NOTE: another approximate approach to match Marmoset gloss curve is to
 	// multiply roughness by 0.7599 in the code below (makes SpecPower range 4..N instead of 1..N)
 #else
-	half m = roughness * roughness * roughness + 1e-4f;	// follow the same curve as unity_SpecCube
-	half n = (2.0 / m) - 2.0;							// http://jbit.net/%7Esparky/academic/mm_brdf.pdf
+	half m = max(1e-4f, roughness * roughness);			// m is the true academic roughness.
+	
+	half n = (2.0 / (m*m)) - 2.0;						// https://dl.dropboxusercontent.com/u/55891920/papers/mm_brdf.pdf
 	n = max(n, 1e-4f);									// prevent possible cases of pow(0,0), which could happen when roughness is 1.0 and NdotH is zero
 	return n;
 #endif
@@ -186,8 +188,8 @@ inline half RoughnessToSpecPower (half roughness)
 // http://www.thetenthplanet.de/archives/255
 inline half NDFBlinnPhongNormalizedTerm (half NdotH, half n)
 {
-	// norm = (n+1)/(2*pi)
-	half normTerm = (n + 1.0) * unity_LightGammaCorrectionConsts_HalfDivPI;
+	// norm = (n+2)/(2*pi)
+	half normTerm = (n + 2.0) * (0.5/UNITY_PI);
 
 	half specTerm = pow (NdotH, n);
 	return specTerm * normTerm;

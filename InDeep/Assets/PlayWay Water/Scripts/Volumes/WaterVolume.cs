@@ -6,25 +6,43 @@ namespace PlayWay.Water
 	[System.Serializable]
 	public class WaterVolume
 	{
-		[Tooltip("Makes water volume be infinite in horizontal directions and infinitely deep. It is still reduced by substractive colliders tho. Check that if this is an ocean, sea or if this water spans through most of the scene.")]
+		[Tooltip("Makes water volume be infinite in horizontal directions and infinitely deep. It is still reduced by substractive colliders tho. Check that if this is an ocean, sea or if this water spans through most of the scene. If you will uncheck this, you will need to add some child colliders to define where water should display.")]
 		[SerializeField]
 		private bool boundless = true;
 		
 		private Water water;
-		private List<WaterVolumeAdd> volumes;
-		private List<WaterVolumeSubtract> subtractors;
+		private List<WaterVolumeAdd> volumes = new List<WaterVolumeAdd>();
+		private List<WaterVolumeSubtract> subtractors = new List<WaterVolumeSubtract>();
 		private Camera volumesCamera;
 		private bool collidersAdded;
-
-		public WaterVolume()
-		{
-			volumes = new List<WaterVolumeAdd>();
-			subtractors = new List<WaterVolumeSubtract>();
-		}
-
+		
 		public bool Boundless
 		{
 			get { return boundless; }
+		}
+
+		public List<WaterVolumeAdd> GetVolumesDirect()
+		{
+			return volumes;
+		}
+
+		public List<WaterVolumeSubtract> GetSubtractiveVolumesDirect()
+		{
+			return subtractors;
+		}
+
+		public bool HasAdditiveVolumes
+		{
+			get
+			{
+				for(int i = 0; i < volumes.Count; ++i)
+				{
+					if(volumes[i].Mode == WaterVolumeBase.WaterVolumeMode.PhysicsAndRendering)
+						return true;
+				}
+
+				return false;
+			}
 		}
 
 		public void Dispose()
@@ -58,7 +76,7 @@ namespace PlayWay.Water
 
 						if(volumeAdd == null)
 							volumeAdd = collider.gameObject.AddComponent<WaterVolumeAdd>();
-
+						
 						AddVolume(volumeAdd);
 					}
 				}
@@ -75,6 +93,7 @@ namespace PlayWay.Water
 		internal void AddVolume(WaterVolumeAdd volume)
 		{
 			volumes.Add(volume);
+            volume.AssignTo(water);
 		}
 
 		internal void RemoveVolume(WaterVolumeAdd volume)
@@ -85,6 +104,7 @@ namespace PlayWay.Water
 		internal void AddSubtractor(WaterVolumeSubtract volume)
 		{
 			subtractors.Add(volume);
+			volume.AssignTo(water);
 		}
 
 		internal void RemoveSubtractor(WaterVolumeSubtract volume)
@@ -92,7 +112,7 @@ namespace PlayWay.Water
 			subtractors.Remove(volume);
 		}
 
-		public bool IsPointInside(Vector3 point, WaterVolumeSubtract[] exclusions)
+		public bool IsPointInside(Vector3 point, WaterVolumeSubtract[] exclusions, float radius = 0.0f)
 		{
             foreach(var volume in subtractors)
 			{
@@ -101,7 +121,7 @@ namespace PlayWay.Water
 			}
 
 			if(boundless)
-				return point.y <= water.transform.position.y + water.SpectraRenderer.MaxHeight;
+				return point.y - radius <= water.transform.position.y + water.MaxVerticalDisplacement;
 
 			foreach(var volume in volumes)
 			{
@@ -128,7 +148,7 @@ namespace PlayWay.Water
 		internal bool IsPointInsideMainVolume(Vector3 point)
 		{
 			if(boundless)
-				return point.y <= water.transform.position.y + water.SpectraRenderer.MaxHeight;
+				return point.y <= water.transform.position.y + water.MaxVerticalDisplacement;
 			else
 				return false;
 		}

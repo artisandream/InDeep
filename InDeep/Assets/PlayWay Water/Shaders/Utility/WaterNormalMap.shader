@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/WaterNormalMap"
+Shader "PlayWay Water/Utilities/WaterNormalMap"
 {
 	Properties
 	{

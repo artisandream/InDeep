@@ -5,24 +5,34 @@ using System.Linq;
 namespace PlayWay.Water
 {
 	/// <summary>
-	/// Resolves detailed info on a spectrum with setup of a specific water object.
+	/// Resolves spectrum data in the context of a specific water object.
 	/// </summary>
 	public class WaterWavesSpectrumData
 	{
-		public Water water;
-		public WaterWavesSpectrum spectrum;
+		readonly private Water water;
+		readonly private WindWaves windWaves;
+		readonly private WaterWavesSpectrum spectrum;
+
+		// 1. mip level 2. scale index 3. spectrum data (finally)
+		private Vector3[][][,] spectrumValues;
+
+		// 1. scale index 2. mip level 3. cpu waves
+		private WaterWave[][][] cpuWaves;
+
+		// shoreline waves
+		private WaterWave[] shorelineCandidates;
 
 		private Texture2D texture;
-		public Vector3[,] values;
-		public WaveFrequency[] gerstnerWaves;
-		public WaveFrequency[] cpuWaves;
-		public float weight;
-		public bool cpuWavesDirty;
-		public float totalAmplitude;
+		private float weight;
+		private bool cpuWavesDirty = true;
+		private float totalAmplitude;
+		private Vector2 lastWindDirection;
+		private int displayResolutionIndex;
 
 		public WaterWavesSpectrumData(Water water, WaterWavesSpectrum spectrum)
 		{
 			this.water = water;
+			this.windWaves = water.GetComponent<WindWaves>();
             this.spectrum = spectrum;
 		}
 
@@ -37,259 +47,404 @@ namespace PlayWay.Water
 			}
 		}
 
-		public void ValidateSpectrum()
+		public int CpuWavesCount
+		{
+			get
+			{
+				int sum = 0;
+
+				if(cpuWaves != null)
+				{
+					foreach(var cpuWavesLevel in cpuWaves)
+					{
+						foreach(var mipLevel in cpuWavesLevel)
+							sum += mipLevel.Length;
+					}
+				}
+				
+				return sum;
+			}
+		}
+
+		public float TotalAmplitude
+		{
+			get { return totalAmplitude; }
+		}
+
+		public float Weight
+		{
+			get { return weight; }
+			set { weight = value; }
+		}
+
+		public WaterWave[] ShorelineCandidates
+		{
+			get { return shorelineCandidates; }
+		}
+
+		public WaterWave[][] GetCpuWaves(int scaleIndex)
+		{
+			return cpuWaves[scaleIndex];
+		}
+
+		public void ValidateSpectrumData()
 		{
 			if(cpuWaves != null)
 				return;
 
-			var spectraRenderer = water.SpectraRenderer;
-			int resolution = spectraRenderer.FinalResolution;
-			int halfResolution = resolution / 2;
-			int cpuMaxWaves = spectraRenderer.CpuMaxWaves;
-			float cpuWaveThreshold = spectraRenderer.CpuWaveThreshold;
-
-			var priorityList = new List<WaveFrequency>();
-
-			if(values == null)
-				values = new Vector3[resolution, resolution];
-
-			if(water.Seed != 0)
-				Random.seed = water.Seed;
-
-			//var random = water.Seed != 0 ? new System.Random(water.Seed) : new System.Random();
-
-			spectrum.ComputeSpectrum(values, null);
-
-			// debug spectrum
-			/*for(int x=0; x<resolution; ++x)
+			lock (this)
 			{
-				for(int y = 0; y < resolution; ++y)
-					values[x, y] = new Vector3(0.0f, 0.0f, values[x, y].z);
-			}
-			values[7, 8] = new Vector3(1.0f, 0.0f, values[7, 8].z);*/
+				if(cpuWaves != null)
+					return;
 
-			var gerstnerWaves = new Heap<WaveFrequency>(40);
+				int resolution = windWaves.FinalResolution;
+				Vector4 tileSizeScales = windWaves.TileSizeScales;
+				Vector3[][,] spectrumValues;
 
-			// write to texture and find meaningful waves
-			const float pix2 = 6.2831853f;
-            float frequencyScale = pix2 / spectrum.TileSize;
-			float gravity = spectrum.Gravity;
-			float halfk = Mathf.PI  / spectrum.TileSize;
+				displayResolutionIndex = Mathf.RoundToInt(Mathf.Log(resolution, 2)) - 4;
+				
+				if(this.spectrumValues == null)
+					this.spectrumValues = new Vector3[displayResolutionIndex + 1][][,];
 
-			totalAmplitude = 0.0f;
+				if(this.spectrumValues.Length <= displayResolutionIndex)
+					System.Array.Resize(ref this.spectrumValues, displayResolutionIndex + 1);
 
-			for(int x = 0; x < resolution; ++x)
-			{
-				float kx = frequencyScale * (x - halfResolution);
-				int u = (x + halfResolution) % resolution;
-
-				for(int y = 0; y < resolution; ++y)
+				if(this.spectrumValues[displayResolutionIndex] == null)
 				{
-					float ky = frequencyScale * (y - halfResolution);
-					int v = (y + halfResolution) % resolution;
+					this.spectrumValues[displayResolutionIndex] = spectrumValues = new Vector3[4][,];
 
-					Vector3 s = values[u, v];
-					float amplitude = Mathf.Sqrt(s.x * s.x + s.y * s.y);
-					float k = Mathf.Sqrt(kx * kx + ky * ky);
-					float w = Mathf.Sqrt(gravity * k);
-                    float gerstnerPriority = amplitude * w;
-					
-					if(amplitude >= cpuWaveThreshold)
-						priorityList.Add(new WaveFrequency(u, v, kx, ky, k, w, amplitude, gerstnerPriority));
+					for(int i = 0; i < 4; ++i)
+						spectrumValues[i] = new Vector3[resolution, resolution];
+				}
+				else
+					spectrumValues = this.spectrumValues[displayResolutionIndex];
+				
+				int seed = water.Seed != 0 ? water.Seed : Random.Range(0, 1000000);
 
-					// don't consider breaking waves for gerstner
-					if(amplitude * spectrum.TileSize > 0.5f * Mathf.PI / k)
-						continue;
-					
-					if(gerstnerWaves.Count == 40)
-					{
-						if(gerstnerWaves.Max.gerstnerPriority < gerstnerPriority)
-						{
-							gerstnerWaves.ExtractMax();
-							gerstnerWaves.Insert(new WaveFrequency(u, v, kx, ky, k + Random.Range(-halfk, halfk), w, amplitude, gerstnerPriority));
-						}
-					}
-					else
-						gerstnerWaves.Insert(new WaveFrequency(u, v, kx, ky, k + Random.Range(-halfk, halfk), w, amplitude, gerstnerPriority));
+				totalAmplitude = 0.0f;
 
-					totalAmplitude += amplitude;
-                }
+				var qualityLevels = WaterQualitySettings.Instance.GetQualityLevelsDirect();
+				int maxResolution = qualityLevels[qualityLevels.Length - 1].maxSpectrumResolution;
+
+				if(resolution > maxResolution)
+					Debug.LogWarningFormat("In water quality settings spectrum resolution of {0} is max, but at runtime a spectrum with resolution of {1} is generated. That may generate some unexpected behaviour. Make sure that the last water quality level has the highest resolution and don't alter it at runtime.", maxResolution, resolution);
+
+				for(byte scaleIndex = 0; scaleIndex < 4; ++scaleIndex)
+				{
+					Random.seed = seed + scaleIndex;
+                    spectrum.ComputeSpectrum(spectrumValues[scaleIndex], tileSizeScales[scaleIndex], maxResolution, null);
+
+					// debug spectrum
+					//ResetSpectrum(spectrumData[scaleIndex]);
+					//if(scaleIndex == 2)
+					//{
+					//	//spectrumData[scaleIndex][0, 240] = new Vector3(1.0f, 0.0f, 1.0f);
+					//	spectrumData[scaleIndex][6, 2] = new Vector3(-3.92f, 0.0f, 1.0f);
+					//	//spectrumData[scaleIndex][2, 12] = new Vector3(3.0f, 0.0f, 1.0f);
+					//}
+				}
+
+				FindCpuWaves();
+			}
+		}
+
+		private void FindCpuWaves()
+		{
+			if(cpuWaves == null)
+				cpuWaves = new WaterWave[4][][];
+
+			for(int i=0; i<4; ++i)
+			{
+				if(cpuWaves[i] == null)
+					cpuWaves[i] = new WaterWave[displayResolutionIndex + 1][];
 			}
 
-			this.gerstnerWaves = gerstnerWaves.ToArray();
-			cpuWaves = priorityList.ToArray();
-			SortCpuWaves();
+			int resolution = windWaves.FinalResolution;
+			int halfResolution = resolution >> 1;
+			int cpuMaxWaves = windWaves.CpuMaxWaves;
+			float cpuWaveThreshold = windWaves.CpuWaveThreshold;
+			Vector4 tileSizeScales = windWaves.TileSizeScales;
+			var shorelineCandidatesHeap = new Heap<WaterWave>();
+			var importantWaves = new List<WaterWave>[displayResolutionIndex + 1];
 
-			if(cpuWaves.Length > spectraRenderer.CpuMaxWaves)
-				System.Array.Resize(ref cpuWaves, cpuMaxWaves);
+			for(int i = 0; i <= displayResolutionIndex; ++i)
+				importantWaves[i] = new List<WaterWave>();
+
+			for(byte scaleIndex = 0; scaleIndex < 4; ++scaleIndex)
+			{
+				float tileSize = spectrum.TileSize * tileSizeScales[scaleIndex];
+				Vector3[,] localValues = spectrumValues[displayResolutionIndex][scaleIndex];
+				float frequencyScale = 2.0f * Mathf.PI / tileSize;
+				float gravity = spectrum.Gravity;
+				float offsetX = tileSize + (0.5f / resolution) * tileSize;
+				float offsetZ = -tileSize + (0.5f / resolution) * tileSize;
+
+				for(int x = 0; x < resolution; ++x)
+				{
+					float kx = frequencyScale * (x - halfResolution);
+					ushort u = (ushort)((x + halfResolution) % resolution);
+
+					for(int y = 0; y < resolution; ++y)
+					{
+						float ky = frequencyScale * (y - halfResolution);
+						ushort v = (ushort)((y + halfResolution) % resolution);
+
+						Vector3 s = localValues[u, v];
+						float amplitude = Mathf.Sqrt(s.x * s.x + s.y * s.y);
+						float k = Mathf.Sqrt(kx * kx + ky * ky);
+						float w = Mathf.Sqrt(gravity * k);
+						float cpuPriority = amplitude;
+
+						if(cpuPriority < 0)
+							cpuPriority = -cpuPriority;
+
+						totalAmplitude += amplitude;
+
+						if(amplitude >= cpuWaveThreshold)
+						{
+							int mipIndex = GetMipIndex(Mathf.Max(Mathf.Min(u, resolution - u - 1), Mathf.Min(v, resolution - v - 1)));
+                            importantWaves[mipIndex].Add(new WaterWave(scaleIndex, offsetX, offsetZ, u, v, kx, ky, k, w, amplitude, cpuPriority));
+						}
+
+						float shorelinePriority = k / amplitude;			// it's used in a max-heap, so this is an inverse of a real priority
+						shorelineCandidatesHeap.Insert(new WaterWave(scaleIndex, offsetX, offsetZ, u, v, kx, ky, k, w, amplitude, shorelinePriority));
+
+						if(shorelineCandidatesHeap.Count > 20)
+							shorelineCandidatesHeap.ExtractMax();
+                    }
+				}
+
+				lock (cpuWaves)
+				{
+					for(int mipIndex = 0; mipIndex <= displayResolutionIndex; ++mipIndex)
+					{
+						cpuWaves[scaleIndex][mipIndex] = importantWaves[mipIndex].ToArray();
+
+						importantWaves[mipIndex].Clear();
+						SortCpuWaves(cpuWaves[scaleIndex][mipIndex], false);
+
+						if(cpuWaves[scaleIndex][mipIndex].Length > windWaves.CpuMaxWaves)
+							System.Array.Resize(ref cpuWaves[scaleIndex][mipIndex], cpuMaxWaves);
+					}
+				}
+			}
+
+			shorelineCandidates = shorelineCandidatesHeap.ToArray();
+			System.Array.Sort(shorelineCandidates);
+        }
+
+		static public int GetMipIndex(int i)
+		{
+			if(i == 0) return 0;
+
+			int mip = (int)Mathf.Log(i, 2) - 4;
+
+			return mip >= 0 ? mip : 0;
+        }
+
+		public Vector3[][,] GetSpectrumValues(int resolution)
+		{
+			int resolutionIndex = Mathf.RoundToInt(Mathf.Log(resolution, 2)) - 4;
+			var spectrumValues = this.spectrumValues[resolutionIndex];
+
+			if(spectrumValues == null)
+			{
+				// if it is missing, create it from some higher res mip level
+				this.spectrumValues[resolutionIndex] = spectrumValues = new Vector3[4][,];
+
+				int higherResIndex;
+				Vector3[][,] higherResSpectrumValues = null;
+
+				for(higherResIndex = resolutionIndex + 1; higherResIndex < this.spectrumValues.Length; ++higherResIndex)
+				{
+					higherResSpectrumValues = this.spectrumValues[higherResIndex];
+
+					if(higherResSpectrumValues != null)
+						break;
+                }
+
+				int halfResolution = resolution / 2;
+				int quarterStartIndex = (1 << (higherResIndex + 4)) - resolution;
+
+				for(int scaleIndex = 0; scaleIndex < 4; ++scaleIndex)
+				{
+					var spectrumValuesTile = spectrumValues[scaleIndex] = new Vector3[resolution, resolution];
+					var higherRes = higherResSpectrumValues[scaleIndex];
+
+					for(int y = 0; y < halfResolution; ++y)
+					{
+						for(int x = 0; x < halfResolution; ++x)
+							spectrumValuesTile[y, x] = higherRes[y, x];
+
+						for(int x = halfResolution; x < resolution; ++x)
+							spectrumValuesTile[y, x] = higherRes[y, quarterStartIndex + x];
+					}
+
+					for(int y = halfResolution; y < resolution; ++y)
+					{
+						for(int x = 0; x < halfResolution; ++x)
+							spectrumValuesTile[y, x] = higherRes[quarterStartIndex + y, x];
+
+						for(int x = halfResolution; x < resolution; ++x)
+							spectrumValuesTile[y, x] = higherRes[quarterStartIndex + y, quarterStartIndex + x];
+					}
+				}
+			}
+			
+			return spectrumValues;
+		}
+
+		public void SetCpuWavesDirty()
+		{
+			cpuWavesDirty = true;
 		}
 
 		public void UpdateSpectralValues(Vector2 windDirection, float directionality)
 		{
-			ValidateSpectrum();
-
+			ValidateSpectrumData();
+			
 			if(cpuWavesDirty)
 			{
-				cpuWavesDirty = false;
+				lock (this)
+				{
+					if(cpuWaves == null || !cpuWavesDirty) return;
 
-				var cpuWaves = this.cpuWaves;
-				int numCpuWaves = cpuWaves.Length;
-                float directionalityInv = 1.0f - directionality;
-				int resolution = water.SpectraRenderer.FinalResolution;
+					lock (cpuWaves)
+					{
+						cpuWavesDirty = false;
 
-				for(int i = 0; i < numCpuWaves; ++i)
-					cpuWaves[i].UpdateSpectralValues(values, windDirection, directionalityInv, resolution);
+						float directionalityInv = 1.0f - directionality;
+						float horizontalDisplacementScale = water.HorizontalDisplacementScale;
+						int resolution = windWaves.FinalResolution;
+						bool mostlySorted = Vector2.Dot(lastWindDirection, windDirection) >= 0.97f;
 
-				int numGerstners = gerstnerWaves.Length;
+						for(int tileIndex = 0; tileIndex < 4; ++tileIndex)
+						{
+							var cpuWavesLocal1 = cpuWaves[tileIndex];
 
-				for(int i = 0; i < numGerstners; ++i)
-					gerstnerWaves[i].UpdateSpectralValues(values, windDirection, directionalityInv, resolution);
+							for(int mipIndex = 0; mipIndex <= displayResolutionIndex; ++mipIndex)
+							{
+								var cpuWavesLocal = cpuWavesLocal1[mipIndex];
+								int numCpuWaves = cpuWavesLocal.Length;
 
-				SortCpuWaves();
-            }
+								for(int i = 0; i < numCpuWaves; ++i)
+									cpuWavesLocal[i].UpdateSpectralValues(spectrumValues[displayResolutionIndex], windDirection, directionalityInv, resolution, horizontalDisplacementScale);
+
+								SortCpuWaves(cpuWavesLocal, mostlySorted);
+							}
+						}
+
+						for(int i = 0; i < shorelineCandidates.Length; ++i)
+							shorelineCandidates[i].UpdateSpectralValues(spectrumValues[displayResolutionIndex], windDirection, directionalityInv, resolution, horizontalDisplacementScale);
+
+						lastWindDirection = windDirection;
+					}
+				}
+
+			}
 		}
 
-		public void SortCpuWaves()
+		public void SortCpuWaves(WaterWave[] windWaves, bool mostlySorted)
 		{
-			System.Array.Sort(cpuWaves, (a, b) =>
+			if(!mostlySorted)
 			{
-				if(a.amplitude > b.amplitude)
-					return -1;
-				else
-					return a.amplitude == b.amplitude ? 0 : 1;
-			});
-		}
+				System.Array.Sort(windWaves, (a, b) =>
+				{
+					if(a.cpuPriority > b.cpuPriority)
+						return -1;
+					else
+						return a.cpuPriority == b.cpuPriority ? 0 : 1;
+				});
+			}
+			else
+			{
+				// bubble sort
+				int numCpuWaves = windWaves.Length;
+				int prevIndex = 0;
 
+				for(int index = 1; index < numCpuWaves; ++index)
+				{
+					if(windWaves[prevIndex].cpuPriority < windWaves[index].cpuPriority)
+					{
+						var t = windWaves[prevIndex];
+						windWaves[prevIndex] = windWaves[index];
+						windWaves[index] = t;
+
+						if(index != 1) index -= 2;
+					}
+
+					prevIndex = index;
+				}
+			}
+		}
+		
 		public void Dispose(bool onlyTexture)
 		{
 			if(texture != null)
 			{
-				Object.Destroy(texture);
+				texture.Destroy();
 				texture = null;
 			}
 
 			if(!onlyTexture)
 			{
-				values = null;
-				cpuWaves = null;
-				cpuWavesDirty = true;
+				lock(this)
+				{
+					spectrumValues = null;
+					cpuWaves = null;
+					cpuWavesDirty = true;
+				}
+			}
+		}
+
+		private void ResetSpectrum(Vector3[,] values)
+		{
+			int resolution = values.GetLength(0);
+
+			for(int x = 0; x < resolution; ++x)
+			{
+				for(int y = 0; y < resolution; ++y)
+				{
+					values[x, y] = new Vector3(0.0f, 0.0f, 0.0f);
+				}
 			}
 		}
 
 		private void CreateSpectrumTexture()
 		{
-			ValidateSpectrum();
+			ValidateSpectrumData();
 
-			int resolution = water.SpectraRenderer.FinalResolution;
-			int halfResolution = resolution / 2;
+			int resolution = windWaves.FinalResolution;
+			int halfResolution = resolution >> 1;
 
 			// create texture
-			texture = new Texture2D(resolution, resolution, TextureFormat.RGBAFloat, false, true);
+			texture = new Texture2D(resolution << 1, resolution << 1, TextureFormat.RGBAFloat, false, true);
+			texture.hideFlags = HideFlags.DontSave;
 			texture.filterMode = FilterMode.Point;
 			texture.wrapMode = TextureWrapMode.Repeat;
 
-			// fill texture
-			for(int x = 0; x < resolution; ++x)
+			for(int scaleIndex = 0; scaleIndex < 4; ++scaleIndex)
 			{
-				int u = (x + halfResolution) % resolution;
+				Vector3[,] spectrumValues = this.spectrumValues[displayResolutionIndex][scaleIndex];
+				int uOffset = (scaleIndex & 1) == 0 ? 0 : resolution;
+				int vOffset = (scaleIndex & 2) == 0 ? 0 : resolution;
 
-				for(int y = 0; y < resolution; ++y)
+				// fill texture
+				for(int x = 0; x < resolution; ++x)
 				{
-					int v = (y + halfResolution) % resolution;
+					int u = (x + halfResolution) % resolution;
 
-					Vector3 s = values[u, v];
-					texture.SetPixel(u, v, new Color(s.x, s.y, s.z, 1.0f));
+					for(int y = 0; y < resolution; ++y)
+					{
+						int v = (y + halfResolution) % resolution;
+
+						Vector3 s = spectrumValues[u, v];
+						texture.SetPixel(uOffset + u, vOffset + v, new Color(s.x, s.y, s.z, 1.0f));
+					}
 				}
 			}
 
 			texture.Apply(false, true);
-		}
-
-		public struct WaveFrequency : System.IComparable<WaveFrequency>
-		{
-			public readonly int u, v;
-			public readonly float kx, ky;
-			public readonly float nkx, nky;
-			public readonly float w;
-			public readonly float k;
-
-			public float amplitude;
-			public float gerstnerPriority;
-			public float offset;
-
-			public WaveFrequency(int u, int v, float kx, float ky, float k, float w, float amplitude, float gerstnerPriority)
-			{
-				this.u = u;
-				this.v = v;
-				this.kx = kx;
-				this.ky = ky;
-				this.k = k;
-				float kl = Mathf.Sqrt(kx * kx + ky * ky);
-				this.nkx = k != 0 ? kx / kl : 0.707107f;
-				this.nky = k != 0 ? ky / kl : 0.707107f;
-				this.amplitude = 2.0f * amplitude;
-				this.offset = 0.0f;
-                this.w = w;
-				this.gerstnerPriority = gerstnerPriority;
-			}
-
-			public void UpdateSpectralValues(Vector3[,] spectrum, Vector2 windDirection, float directionalityInv, int resolution)
-			{
-				var s = spectrum[u, v];
-
-				float dp = windDirection.x * nkx + windDirection.y * nky;
-				float phi = Mathf.Acos(dp * 0.999f);
-				float scale = Mathf.Sqrt(1.0f + s.z * Mathf.Cos(2.0f * phi));
-				if(dp < 0.0f) scale *= directionalityInv;
-
-				float sx = s.x * scale;
-				float sy = s.y * scale;
-				
-				amplitude = 2.0f * Mathf.Sqrt(sx * sx + sy * sy);
-				offset = Mathf.Atan2(Mathf.Abs(sx), Mathf.Abs(sy));
-
-				if(sy > 0.0f)
-				{
-					amplitude = -amplitude;
-					offset = -offset;
-				}
-
-				if(sx < 0.0f) offset = -offset;
-
-				gerstnerPriority = amplitude * w;
-            }
-
-			public Vector2 GetHorizontalDisplacementAt(float x, float z, float t)
-			{
-				float dot = kx * x + ky * z;
-				float c = amplitude * Mathf.Cos(dot + t * w + offset);
-
-				return new Vector2(nkx * c, nky * c);
-			}
-
-			public Vector3 GetDisplacementAt(float x, float z, float t)
-			{
-				float dot = kx * x + ky * z;
-
-				float s, c;
-				FastMath.SinCos2048(dot + t * w + offset, out s, out c);
-
-				c *= amplitude;
-
-				return new Vector3(nkx * c, s * amplitude, nky * c);
-			}
-			
-			public float GetHeightAt(float x, float z, float t)
-			{
-				float dot = kx * x + ky * z;
-				return amplitude * Mathf.Sin(dot + t * w + offset);
-			}
-
-			// used by the heap to identify best waves for gerstner
-			public int CompareTo(WaveFrequency other)
-			{
-				return other.gerstnerPriority.CompareTo(gerstnerPriority);
-			}
 		}
 	}
 }

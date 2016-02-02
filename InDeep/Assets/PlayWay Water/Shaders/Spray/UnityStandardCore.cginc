@@ -11,10 +11,6 @@
 
 #include "AutoLight.cginc"
 
-// smooth particles
-sampler2D_float _CameraDepthTexture;
-float _InvFade;
-
 //-------------------------------------------------------------------------------------
 // counterpart for NormalizePerPixelNormal
 // skips normalization per-vertex and expects normalization to happen per-pixel
@@ -219,6 +215,8 @@ inline FragmentCommonData FragmentSetup (float4 i_tex, float2 particleData, half
 	half3 eyeVec = i_eyeVec;
 	eyeVec = NormalizePerPixelNormal(eyeVec);
 
+	normalWorld.y += 1.0;
+	normalWorld = normalize(normalWorld);
 
 	FragmentCommonData o = UNITY_SETUP_BRDF_INPUT (i_tex, texBlend);
 	o.normalWorld = normalWorld;
@@ -297,8 +295,7 @@ struct VertexOutputForwardBase
 		float3 posWorld					: TEXCOORD8;
 	#endif
 
-	half4 screenPos						: TEXCOORD9;
-
+	float4 screenPos					: TEXCOORD9;
 	half2 particleData					: TEXCOORD10;
 };
 
@@ -384,9 +381,13 @@ half4 fragForwardBase (VertexOutputForwardBase i) : SV_Target
 
 	UNITY_APPLY_FOG(i.fogCoord, c.rgb);
 
-	half3 mask = tex2Dproj(_WaterMask, UNITY_PROJ_COORD(i.screenPos));
-	if (LinearEyeDepthHalf(i.screenPos.z / i.screenPos.w) <= mask.x)
-		s.alpha *= 1.0 - mask.z;
+	// don't render water spray from the underwater
+	half mask1 = tex2Dproj(_UnderwaterMask, UNITY_PROJ_COORD(i.screenPos));
+	clip(0.001 - mask1);
+
+	float4 mask = tex2Dproj(_SubtractiveMask, UNITY_PROJ_COORD(i.screenPos));
+	if (i.screenPos.z / i.screenPos.w <= mask.y)
+		s.alpha *= mask.w;
 	clip(s.alpha - 0.006);
 
 	return OutputForward (c, s.alpha, i.screenPos);
@@ -408,7 +409,7 @@ struct VertexOutputForwardAdd
 	half3 viewDirForParallax			: TEXCOORD8;
 #endif
 
-	half4 screenPos						: TEXCOORD9;
+	float4 screenPos					: TEXCOORD9;
 	half2 particleData					: TEXCOORD10;
 };
 
@@ -468,9 +469,9 @@ half4 fragForwardAdd (VertexOutputForwardAdd i) : SV_Target
 	
 	UNITY_APPLY_FOG_COLOR(i.fogCoord, c.rgb, half4(0,0,0,0)); // fog towards black in additive pass
 
-	half3 mask = tex2Dproj(_WaterMask, UNITY_PROJ_COORD(i.screenPos));
-	if (LinearEyeDepthHalf(i.screenPos.z / i.screenPos.w) <= mask.x)
-		s.alpha *= 1.0 - mask.z;
+	float4 mask = tex2Dproj(_SubtractiveMask, UNITY_PROJ_COORD(i.screenPos));
+	if (i.screenPos.z / i.screenPos.w <= mask.y)
+		s.alpha *= mask.w;
 	clip(s.alpha - 0.006);
 
 	return OutputForward (c, s.alpha, i.screenPos);

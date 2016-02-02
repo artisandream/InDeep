@@ -58,6 +58,9 @@ namespace PlayWay.WaterSamples
 			WaterQualitySettings.Instance.Changed -= OnQualitySettingsChanged;
 			WaterQualitySettings.Instance.Changed += OnQualitySettingsChanged;
 
+			// ensure that there won't be a hiccup when profiles are to be used for the first time
+			water.CacheProfiles(calmShoreWater, calmSeaWater, choppySeaWater, stormSeaWater, breezeSeaWater);
+
 			//DisableIMEs();
 		}
 
@@ -88,7 +91,7 @@ namespace PlayWay.WaterSamples
 
 		public void ChangeProfile2()
 		{
-			TweenProfiles(choppySeaWater, stormSeaWater, 0.55f, 0.6f, ambient2, 2.0f);
+			TweenProfiles(choppySeaWater, stormSeaWater, 0.55f, 0.54f, ambient2, 2.0f);
 		}
 		
 		private void TweenProfiles(WaterProfile source, WaterProfile target, float sunIntensity, float exposure, AmbientGradient ambientGradient, float transitionDuration)
@@ -108,9 +111,6 @@ namespace PlayWay.WaterSamples
 
 		void Update()
 		{
-			// ensure that there won't be a hiccup when profiles are to be used for the first time
-			water.CacheProfiles(calmShoreWater, calmSeaWater, choppySeaWater, stormSeaWater, breezeSeaWater);
-
 			if(Time.time >= profileChangeTime)
 			{
 				// animated transition between profiles
@@ -154,12 +154,12 @@ namespace PlayWay.WaterSamples
 
 		private void OnQualitySettingsChanged()
 		{
+			// ensure that there won't be a hiccup when profiles are to be used for the first time
 			water.CacheProfiles(calmShoreWater, calmSeaWater, choppySeaWater, stormSeaWater, breezeSeaWater);
 		}
 
 		private void RefreshEnvironment()
 		{
-			//DynamicGI.UpdateEnvironment();
 			reflectionProbe.RenderProbe();
 			environmentDirty = false;
         }

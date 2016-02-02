@@ -7,8 +7,14 @@ namespace PlayWay.Water
 		static public Vector3 RaycastPlane(Camera camera, float planeHeight, Vector3 pos)
 		{
 			var ray = camera.ViewportPointToRay(pos);
-			if(ray.direction.y > -0.01f)
-				ray.direction = new Vector3(ray.direction.x, -ray.direction.y - 0.02f, ray.direction.z);
+			if(camera.transform.position.y > planeHeight)
+			{
+				if(ray.direction.y > -0.01f)
+					ray.direction = new Vector3(ray.direction.x, -ray.direction.y - 0.02f, ray.direction.z);
+			}
+			else if(ray.direction.y < 0.01f)
+				ray.direction = new Vector3(ray.direction.x, -ray.direction.y + 0.02f, ray.direction.z);
+
 			float t = -(ray.origin.y - planeHeight) / ray.direction.y;
 			Vector3 ws = ray.direction * t;
 

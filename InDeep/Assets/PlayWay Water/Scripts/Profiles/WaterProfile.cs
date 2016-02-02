@@ -24,10 +24,11 @@ namespace PlayWay.Water
 		[SerializeField]
 		private float tileScale = 1.0f;
 
-		[Tooltip("Setting it to something else than 1.0 will make the spectrum less physical, but still may be useful at times.")]
+		[Tooltip("Setting it to something else than 1.0 will make the spectrum less physically correct, but still may be useful at times.")]
 		[SerializeField]
 		private float wavesAmplitude = 1.0f;
 
+		[Range(0.0f, 4.0f)]
 		[SerializeField]
 		private float horizontalDisplacementScale = 1.0f;
 
@@ -46,12 +47,12 @@ namespace PlayWay.Water
 		[SerializeField]
 		private float directionality = 0.0f;
 
-		[ColorUsage(false, true, 0.0f, 1.0f, 0.0f, 1.0f)]
+		[ColorUsage(false, true, 0.0f, 3.0f, 0.0f, 3.0f)]
 		[SerializeField]
 		private Color absorptionColor = new Color(0.35f, 0.04f, 0.001f, 1.0f);
 
 		[Tooltip("Used by the underwater camera image-effect.")]
-		[ColorUsage(false, true, 0.0f, 1.0f, 0.0f, 1.0f)]
+		[ColorUsage(false, true, 0.0f, 3.0f, 0.0f, 3.0f)]
 		[SerializeField]
 		private Color underwaterAbsorptionColor = new Color(0.35f, 0.04f, 0.001f, 1.0f);
 
@@ -71,11 +72,22 @@ namespace PlayWay.Water
 		[SerializeField]
 		private Color emissionColor = new Color(0.0f, 0.0f, 0.0f);
 
+		[ColorUsage(false)]
+		[SerializeField]
+		private Color reflectionColor = new Color(1.0f, 1.0f, 1.0f);
+		
 		[Range(0.0f, 1.0f)]
 		[SerializeField]
 		private float smoothness = 0.94f;
-		
-		[Range(0.0f, 4.0f)]
+
+		[SerializeField]
+		private bool customAmbientSmoothness = false;
+
+		[Range(0.0f, 1.0f)]
+		[SerializeField]
+		private float ambientSmoothness = 0.94f;
+
+		[Range(0.0f, 1.0f)]
 		[SerializeField]
 		private float subsurfaceScattering = 1.0f;
 
@@ -86,16 +98,9 @@ namespace PlayWay.Water
 		[SerializeField]
 		private float fresnelBias = 0.02040781f;
 
-		[Tooltip("Water gets really noisy at a distance and SMAA or FXAA won't handle that. This parameter will let you fade water's normals to avoid this problem.")]
+		[Range(0.5f, 20.0f)]
 		[SerializeField]
-		private float normalsFadeBias = 10.0f;
-
-		[Tooltip("Water gets really noisy at a distance and SMAA or FXAA won't handle that. This parameter will let you fade water's normals to avoid this problem.")]
-		[SerializeField]
-		private float normalsFadeDistance = 90.0f;
-
-		[SerializeField]
-		private float detailFadeDistance = 2.5f;
+		private float detailFadeDistance = 4.5f;
 
 		[Range(0.1f, 10.0f)]
 		[SerializeField]
@@ -106,12 +111,14 @@ namespace PlayWay.Water
 		[SerializeField]
 		private float planarReflectionIntensity = 0.6f;
 
+		[Range(1.0f, 10.0f)]
 		[SerializeField]
-		private float planarReflectionDistortion = 18.0f;
+		private float planarReflectionFlatten = 6.0f;
 
-		[Range(-0.5f, 0.1f)]
+		[Tooltip("Fixes some artifacts produced by planar reflections at grazing angles.")]
+		[Range(0.0f, 0.008f)]
 		[SerializeField]
-		private float planarReflectionOffset = -0.3f;
+		private float planarReflectionVerticalOffset = 0.0015f;
 
 		[SerializeField]
 		private float edgeBlendFactor = 0.15f;
@@ -125,6 +132,18 @@ namespace PlayWay.Water
 		[Tooltip("Used by the physics.")]
 		[SerializeField]
 		private float density = 998.6f;
+		
+		[Range(0.0f, 0.03f)]
+		[SerializeField]
+		private float underwaterBlurSize = 0.003f;
+
+		[Range(0.0f, 0.4f)]
+		[SerializeField]
+		private float underwaterDistortionsIntensity = 0.05f;
+
+		[Range(0.02f, 0.5f)]
+		[SerializeField]
+		private float underwaterDistortionAnimationSpeed = 0.1f;
 
 		[SerializeField]
 		private NormalMapAnimation normalMapAnimation1 = new NormalMapAnimation(1.0f, -10.0f, 1.0f, new Vector2(1.0f, 1.0f));
@@ -134,10 +153,31 @@ namespace PlayWay.Water
 
 		[SerializeField]
 		private Texture2D normalMap;
+		
+		[SerializeField]
+		private float foamIntensity = 1.0f;
 
-		//[Tooltip("Used for parallax mapping.")]
-		//[SerializeField]
-		//private Texture2D heightMap;
+		[SerializeField]
+		private float foamThreshold = 1.0f;
+
+		[Tooltip("Determines how fast foam will fade out.")]
+		[SerializeField]
+		private float foamFadingFactor = 0.85f;
+
+		[SerializeField]
+		private Color foamSpecularColor = new Color(1.0f, 1.0f, 1.0f, 0.0f);
+
+		[Range(0.0f, 4.0f)]
+		[SerializeField]
+		private float sprayThreshold = 1.0f;
+
+		[Range(0.0f, 0.999f)]
+		[SerializeField]
+		private float spraySkipRatio = 0.9f;
+
+		[Range(0.25f, 4.0f)]
+		[SerializeField]
+		private float spraySize = 1.0f;
 
 		[SerializeField]
 		private Texture2D foamDiffuseMap;
@@ -226,11 +266,26 @@ namespace PlayWay.Water
 			get { return emissionColor; }
 		}
 
+		public Color ReflectionColor
+		{
+			get { return reflectionColor; }
+		}
+
 		public float Smoothness
 		{
 			get { return smoothness; }
 		}
-		
+
+		public bool CustomAmbientSmoothness
+		{
+			get { return customAmbientSmoothness; }
+		}
+
+		public float AmbientSmoothness
+		{
+			get { return customAmbientSmoothness ? ambientSmoothness : smoothness; }
+		}
+
 		public float SubsurfaceScattering
 		{
 			get { return subsurfaceScattering; }
@@ -245,20 +300,10 @@ namespace PlayWay.Water
 		{
 			get { return fresnelBias; }
 		}
-
-		public float NormalsFadeBias
-		{
-			get { return normalsFadeBias; }
-		}
-
-		public float NormalsFadeDistance
-		{
-			get { return normalsFadeDistance; }
-		}
-
+		
 		public float DetailFadeDistance
 		{
-			get { return detailFadeDistance; }
+			get { return detailFadeDistance * detailFadeDistance; }
 		}
 
 		public float DisplacementNormalsIntensity
@@ -271,14 +316,14 @@ namespace PlayWay.Water
 			get { return planarReflectionIntensity; }
 		}
 
-		public float PlanarReflectionDistortion
+		public float PlanarReflectionFlatten
 		{
-			get { return planarReflectionDistortion; }
+			get { return planarReflectionFlatten; }
 		}
 
-		public float PlanarReflectionOffset
+		public float PlanarReflectionVerticalOffset
 		{
-			get { return planarReflectionOffset; }
+			get { return planarReflectionVerticalOffset; }
 		}
 
 		public float EdgeBlendFactor
@@ -301,6 +346,21 @@ namespace PlayWay.Water
 			get { return density; }
 		}
 
+		public float UnderwaterBlurSize
+		{
+			get { return underwaterBlurSize; }
+		}
+
+		public float UnderwaterDistortionsIntensity
+		{
+			get { return underwaterDistortionsIntensity; }
+		}
+
+		public float UnderwaterDistortionAnimationSpeed
+		{
+			get { return underwaterDistortionAnimationSpeed; }
+		}
+
 		public NormalMapAnimation NormalMapAnimation1
 		{
 			get { return normalMapAnimation1; }
@@ -309,6 +369,41 @@ namespace PlayWay.Water
 		public NormalMapAnimation NormalMapAnimation2
 		{
 			get { return normalMapAnimation2; }
+		}
+
+		public float FoamIntensity
+		{
+			get { return foamIntensity; }
+		}
+
+		public float FoamThreshold
+		{
+			get { return foamThreshold; }
+		}
+
+		public float FoamFadingFactor
+		{
+			get { return foamFadingFactor; }
+		}
+
+		public Color FoamSpecularColor
+		{
+			get { return foamSpecularColor; }
+		}
+
+		public float SprayThreshold
+		{
+			get { return sprayThreshold; }
+		}
+
+		public float SpraySkipRatio
+		{
+			get { return spraySkipRatio; }
+		}
+
+		public float SpraySize
+		{
+			get { return spraySize; }
 		}
 
 		public Texture2D NormalMap

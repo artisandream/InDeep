@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Utilities/Blur"
+Shader "PlayWay Water/Utilities/Blur"
 {
 	Properties
 	{
@@ -31,8 +31,7 @@
 	sampler2D _MainTex;
 	half2 _Offset;
 
-	static const half4 _Weights[7] = { half4(0.0205,0.0205,0.0205,0.0205), half4(0.0855,0.0855,0.0855,0.0855), half4(0.232,0.232,0.232,0.232),
-			half4(0.324,0.324,0.324,0.324), half4(0.232,0.232,0.232,0.232), half4(0.0855,0.0855,0.0855,0.0855), half4(0.0205,0.0205,0.0205,0.0205) };
+	static const half4 _Weights[4] = { half4(0.0205,0.0205,0.0205,0.0205), half4(0.0855,0.0855,0.0855,0.0855), half4(0.232,0.232,0.232,0.232), half4(0.324,0.324,0.324,0.324) };
 
 	inline void SetUV(out half2 uv, inout half2 current)
 	{
@@ -72,9 +71,9 @@
 		AddSampleAt(vo.uv1, color, 1);
 		AddSampleAt(vo.uv2, color, 2);
 		AddSampleAt(vo.uv3, color, 3);
-		AddSampleAt(vo.uv4, color, 4);
-		AddSampleAt(vo.uv5, color, 5);
-		AddSampleAt(vo.uv6, color, 6);
+		AddSampleAt(vo.uv4, color, 2);
+		AddSampleAt(vo.uv5, color, 1);
+		AddSampleAt(vo.uv6, color, 0);
 
 		return color;
 	}

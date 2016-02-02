@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Foam/Global"
+Shader "PlayWay Water/Foam/Global"
 {
 	Properties
 	{
@@ -18,86 +18,72 @@
 	struct VertexOutput
 	{
 		float4 pos	: SV_POSITION;
-		half2 uv	: TEXCOORD0;
+		half2 uv		: TEXCOORD0;		// center
+		half2 uv0		: TEXCOORD1;		// right
+		half2 uv1		: TEXCOORD2;		// up
+		half2 uv2		: TEXCOORD3;		// left
+		half2 uv3		: TEXCOORD4;		// down
 	};
 
 	sampler2D _MainTex;
-	sampler2D _DistortionMapB;
+	sampler2D _DisplacementMap0;
+	sampler2D _DisplacementMap1;
+	sampler2D _DisplacementMap2;
+	sampler2D _DisplacementMap3;
+	half2 _MainTex_TexelSize;
 
 	half4 _SampleDir1;
 	half2 _DeltaPosition;
 	half4 _FoamParameters;		// x = intensity, y = horizonal displacement scale, z = power, w = fading factor
+	half4 _FoamIntensity;
 
 	VertexOutput vert (VertexInput vi)
 	{
 		VertexOutput vo;
 
+		float offset = _MainTex_TexelSize.x;
+
 		vo.pos = mul(UNITY_MATRIX_MVP, vi.vertex);
-		vo.uv = vi.uv0;
+
+		vo.uv = vi.uv0 - _SampleDir1.zw * 0.000002;
+		vo.uv0 = vi.uv0 + float2(offset, 0.0);
+		vo.uv1 = vi.uv0 + float2(0.0, offset);
+		vo.uv2 = vi.uv0 + float2(-offset, 0.0);
+		vo.uv3 = vi.uv0 + float2(0.0, -offset);
 
 		return vo;
 	}
 
-	half ComputeFoamGain5(half2 uv)
+	inline half ComputeFoamGain(VertexOutput vo, sampler2D displacementMap, half intensity)
 	{
-		half2 displacement = tex2D(_DistortionMapB, uv);
-#if SHADER_API_D3D11
-		half3 j = half3(ddx_fine(displacement.x), ddy_fine(displacement.y), ddx_fine(displacement.y)) * _FoamParameters.y;
-#else
-		half3 j = half3(ddx(displacement.x), ddy(displacement.y), ddx(displacement.y)) * _FoamParameters.y;
-#endif
+		half2 h10 = tex2D(displacementMap, vo.uv0).xz;
+		half2 h01 = tex2D(displacementMap, vo.uv1).xz;
+		half2 h20 = tex2D(displacementMap, vo.uv2).xz;
+		half2 h02 = tex2D(displacementMap, vo.uv3).xz;
+
+		half4 diff = half4(h20 - h10, h02 - h01) * -0.7;
+
+		half3 j = half3(diff.x, diff.w, diff.y) * intensity;
 		j.xy += 1.0;
 
 		half jacobian = -(j.x * j.y - j.z * j.z);
 		half gain = max(0.0, jacobian + 0.94);
 
-#if FOAM_POW_2
-		gain = gain * gain;
-#elif FOAM_POW_N
-		gain = pow(gain, _FoamParameters.z);
-#endif
-
 		return gain;
 	}
 
-	half ComputeFoamGain3(half2 uv)
+	half4 frag(VertexOutput vo) : SV_Target
 	{
-		half2 displacement = tex2D(_DistortionMapB, uv);
-		half3 j = half3(ddx(displacement.x), ddy(displacement.y), ddx(displacement.y)) * _FoamParameters.y;
-		j.xy += 1.0;
+		half4 foam = tex2D(_MainTex, vo.uv) * _FoamParameters.w;
 
-		half jacobian = -(j.x * j.y - j.z * j.z);
-		half gain = max(0.0, jacobian + 0.94);
+		half4 gain;
+		gain.x = ComputeFoamGain(vo, _DisplacementMap0, _FoamIntensity.x);
+		gain.y = ComputeFoamGain(vo, _DisplacementMap1, _FoamIntensity.y);
+		gain.z = ComputeFoamGain(vo, _DisplacementMap2, _FoamIntensity.z);
+		gain.w = ComputeFoamGain(vo, _DisplacementMap3, _FoamIntensity.w);
+		gain *= 6 * _FoamParameters.x;
 
-#if FOAM_POW_2
-		gain = gain * gain;
-#elif FOAM_POW_N
-		gain = pow(gain, _FoamParameters.z);
-#endif
-
-		return gain;
-	}
-
-	half4 frag5(VertexOutput vo) : SV_Target
-	{
-		half2 foamUV = vo.uv - _SampleDir1.zw * 0.000002;
-		half foam = tex2D(_MainTex, foamUV) * _FoamParameters.w;
-
-		half gain = ComputeFoamGain5(vo.uv) * 6;
-		foam += gain * _FoamParameters.x;
-
-		return foam;
-	}
-
-	half4 frag3(VertexOutput vo) : SV_Target
-	{
-		half2 foamUV = vo.uv - _SampleDir1.zw * 0.000002;
-		half foam = tex2D(_MainTex, foamUV) * _FoamParameters.w;
-
-		half gain = ComputeFoamGain3(vo.uv) * 6;
-		foam += gain * _FoamParameters.x;
-
-		return foam;
+		return foam + gain;
 	}
 
 	ENDCG
@@ -110,31 +96,10 @@
 
 			CGPROGRAM
 			
-			#pragma target 5.0
+			#pragma target 2.0
 
 			#pragma vertex vert
-			#pragma fragment frag5
-
-			#pragma multi_compile FOAM_POW_1 FOAM_POW_2 FOAM_POW_N
-
-			ENDCG
-		}
-	}
-
-	SubShader
-	{
-		Pass
-		{
-			ZTest Always Cull Off ZWrite Off
-
-			CGPROGRAM
-
-			#pragma target 3.0
-
-			#pragma vertex vert
-			#pragma fragment frag3
-
-			#pragma multi_compile FOAM_POW_1 FOAM_POW_2 FOAM_POW_N
+			#pragma fragment frag
 
 			ENDCG
 		}

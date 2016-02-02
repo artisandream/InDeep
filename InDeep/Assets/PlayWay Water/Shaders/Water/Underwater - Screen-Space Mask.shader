@@ -1,4 +1,4 @@
-﻿Shader "PlayWay Water/Underwater/Screen-Space Mask"
+Shader "PlayWay Water/Underwater/Screen-Space Mask"
 {
 	SubShader
 	{
@@ -7,18 +7,21 @@
 		Pass
 		{
 			ZTest Always
-			Cull Front
+			//Cull Front
+			Cull Off
 			ColorMask R
-			BlendOp Min
+			//BlendOp Min
+			Blend One One
 
 			CGPROGRAM
 			
 			#pragma target 5.0
 			#pragma only_renderers d3d11
 
-			#pragma multi_compile __ _FFT_WAVES
-			#pragma multi_compile ____ _GERSTNER_WAVES
-			#define _QUADS 1
+			#pragma multi_compile __ _WAVES_FFT
+			#pragma multi_compile ____ _WAVES_GERSTNER
+			#pragma multi_compile _______ _WAVES_ALIGN
+			#pragma multi_compile ___ _TRIANGLES
 
 			#if UNITY_CAN_COMPILE_TESSELLATION
 				#pragma vertex tessvert_surf
@@ -46,16 +49,19 @@
 		Pass
 		{
 			ZTest Always
-			Cull Front
+			//Cull Front
+			Cull Off
 			ColorMask R
-			BlendOp Min
+			//BlendOp Min
+			Blend One One
 
 			CGPROGRAM
 
 			#pragma target 3.0
 
-			#pragma multi_compile __ _FFT_WAVES
-			#pragma multi_compile ____ _GERSTNER_WAVES
+			#pragma multi_compile __ _WAVES_FFT
+			#pragma multi_compile ____ _WAVES_GERSTNER
+			#pragma multi_compile _______ _WAVES_ALIGN
 
 			#pragma vertex vert
 			#pragma fragment maskFrag
@@ -73,15 +79,17 @@
 		Pass
 		{
 			ZTest Always
-			Cull Front
+			//Cull Front
+			Cull Off
 			ColorMask R
-			BlendOp Min
+			//BlendOp Min
+			Blend One One
 
 			CGPROGRAM
 
 			#pragma target 2.0
 
-			#pragma multi_compile ____ _GERSTNER_WAVES
+			#pragma multi_compile ____ _WAVES_GERSTNER
 
 			#pragma vertex vert
 			#pragma fragment maskFrag

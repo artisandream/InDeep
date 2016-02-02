@@ -1,5 +1,4 @@
-﻿using System.IO;
-using UnityEditor;
+﻿using UnityEditor;
 using UnityEngine;
 
 namespace PlayWay.Water
@@ -12,10 +11,18 @@ namespace PlayWay.Water
 
 		private GUIStyle warningLabel;
 		private GUIStyle normalMapLabel;
+		private bool initialized;
 
 		protected override void UpdateStyles()
 		{
 			base.UpdateStyles();
+			
+			if(!initialized)
+			{
+				Undo.undoRedoPerformed -= OnUndoRedoPerformed;
+				Undo.undoRedoPerformed += OnUndoRedoPerformed;
+				initialized = true;
+			}
 
 			if(warningLabel == null)
 			{
@@ -26,7 +33,7 @@ namespace PlayWay.Water
 
 			if(illustrationTex == null)
 			{
-				string texPath = WaterPackageUtilities.GetPackagePath(this, "/Textures/Editor/Illustration.png");
+				string texPath = WaterPackageUtilities.WaterPackagePath + "/Textures/Editor/Illustration.png";
 				illustrationTex = (Texture2D)AssetDatabase.LoadMainAssetAtPath(texPath);
 			}
 
@@ -39,12 +46,18 @@ namespace PlayWay.Water
 			}
 		}
 
+		public override bool RequiresConstantRepaint()
+		{
+			return true;
+		}
+
 		public override void OnInspectorGUI()
 		{
 			UpdateGUI();
 
 			var profile = (WaterProfile)target;
 
+			GUI.enabled = !Application.isPlaying;
 			PropertyField("spectrumType");
 
 			DrawWindSpeedGUI();
@@ -52,6 +65,8 @@ namespace PlayWay.Water
 			PropertyField("tileSize");
 			PropertyField("tileScale");
 			PropertyField("wavesAmplitude");
+			GUI.enabled = true;
+
 			PropertyField("horizontalDisplacementScale");
 
 			if(profile.SpectrumType == WaterProfile.WaterSpectrumType.Phillips)
@@ -74,6 +89,7 @@ namespace PlayWay.Water
 					PropertyField("specularColor", "Specular");
 					PropertyField("depthColor", "Depth");
 					PropertyField("emissionColor", "Emission");
+					PropertyField("reflectionColor", "Reflection");
 
 					EditorGUILayout.EndVertical();
 				}
@@ -84,6 +100,14 @@ namespace PlayWay.Water
 			GUILayout.Space(8.0f);
 
 			PropertyField("smoothness");
+			var customAmbientSmoothnessProp = PropertyField("customAmbientSmoothness");
+
+			if(!customAmbientSmoothnessProp.hasMultipleDifferentValues)
+			{
+				if(customAmbientSmoothnessProp.boolValue)
+					PropertyField("ambientSmoothness");
+			}
+
 			PropertyField("edgeBlendFactor", "Edge Blend Factor");
 			PropertyField("subsurfaceScattering", "Subsurface Scattering");
 			PropertyField("directionalWrapSSS", "Directional Wrap SSS");
@@ -95,18 +119,40 @@ namespace PlayWay.Water
 			GUILayout.Space(8.0f);
 
 			GUILayout.Label("Normals", EditorStyles.boldLabel);
-			PropertyField("normalsFadeDistance", "Fade Distance");
-			PropertyField("normalsFadeBias", "Fade Bias");
+			//PropertyField("normalsFadeDistance", "Fade Distance");
+			//PropertyField("normalsFadeBias", "Fade Bias");
 			PropertyField("detailFadeDistance", "Detail Fade Distance");
 			PropertyField("displacementNormalsIntensity", "Slope Intensity");
 			DrawNormalAnimationEditor();
 
 			GUILayout.Space(8.0f);
 
+			GUILayout.Label("Foam", EditorStyles.boldLabel);
+			PropertyField("foamIntensity", "Intensity");
+			PropertyField("foamThreshold", "Threshold");
+			PropertyField("foamFadingFactor", "Fade Factor");
+			PropertyField("foamSpecularColor", "Foam Specular Color");
+
+			GUILayout.Space(8.0f);
+
 			GUILayout.Label("Planar Reflections", EditorStyles.boldLabel);
 			PropertyField("planarReflectionIntensity", "Intensity");
-			PropertyField("planarReflectionOffset", "Offset");
-			PropertyField("planarReflectionDistortion", "Distortion");
+			PropertyField("planarReflectionFlatten", "Flatten");
+			PropertyField("planarReflectionVerticalOffset", "Offset");
+
+			GUILayout.Space(8.0f);
+
+			GUILayout.Label("Underwater", EditorStyles.boldLabel);
+			PropertyField("underwaterBlurSize", "Blur Size");
+			PropertyField("underwaterDistortionsIntensity", "Distortion Intensity");
+			PropertyField("underwaterDistortionAnimationSpeed", "Distortion Animation Speed");
+
+			GUILayout.Space(8.0f);
+
+			GUILayout.Label("Spray", EditorStyles.boldLabel);
+			PropertyField("sprayThreshold", "Threshold");
+			PropertyField("spraySkipRatio", "Skip Ratio");
+			PropertyField("spraySize", "Size");
 
 			GUILayout.Space(8.0f);
 
@@ -120,17 +166,23 @@ namespace PlayWay.Water
 			serializedObject.ApplyModifiedProperties();
 
 			if(GUI.changed)
-			{
-				var waters = FindObjectsOfType<Water>();
-
-				foreach(var water in waters)
-					water.OnValidate();
-			}
+				ValidateWaterObjects();
         }
+
+		private void ValidateWaterObjects()
+		{
+			var waters = FindObjectsOfType<Water>();
+
+			foreach(var water in waters)
+			{
+				water.SetProfiles(water.Profiles);
+				water.OnValidate();
+			}
+		}
 
 		private void DrawWindSpeedGUI()
 		{
-			var profile = (WaterProfile)target;
+			//var profile = (WaterProfile)target;
 
 			var windSpeedProp = serializedObject.FindProperty("windSpeed");
 
@@ -147,10 +199,9 @@ namespace PlayWay.Water
 			if(knots != newKnots)
 				windSpeedProp.floatValue = KnotsToMps(newKnots);
 
-			float wavelength = WindSpeedToWavelength(mps);
-
-			if(wavelength >= profile.TileSize)
-				EditorGUILayout.LabelField(string.Format("This wind should generate waves of length {0:0}m but \"Tile Size\" is set to {1:0}m. Results will be incorrect.", wavelength, profile.TileSize), warningLabel);
+			//float wavelength = WindSpeedToWavelength(mps);
+			//if(wavelength >= profile.TileSize)
+			//	EditorGUILayout.LabelField(string.Format("This wind should generate waves of length {0:0}m but \"Tile Size\" is set to {1:0}m. Results will be incorrect.", wavelength, profile.TileSize), warningLabel);
 		}
 
 		private void DrawIOREditor()
@@ -253,6 +304,13 @@ namespace PlayWay.Water
 				return "Violent Storm";
 			else
 				return "Hurricane";
+		}
+
+		private void OnUndoRedoPerformed()
+		{
+			serializedObject.Update();
+			ValidateWaterObjects();
+			Repaint();
 		}
 
 		private float IORToBias(float ior)

@@ -15,9 +15,9 @@ namespace PlayWay.Water
 			this.cutoffFactor = cutoffFactor;
 		}
 
-		public override void ComputeSpectrum(Vector3[,] spectrum, System.Random random)
+		public override void ComputeSpectrum(Vector3[,] spectrum, float tileSizeMultiplier, int maxResolution, System.Random random)
 		{
-			float tileSize = TileSize;
+			float tileSize = TileSize * tileSizeMultiplier;
 			float totalAmplitude = amplitude * ComputeWaveAmplitude(windSpeed);
 			float realSizeInv = 1.0f / tileSize;
 

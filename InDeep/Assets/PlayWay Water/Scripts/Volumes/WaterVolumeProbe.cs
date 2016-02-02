@@ -18,6 +18,7 @@ namespace PlayWay.Water
 		private Transform target;
 		private bool targetted;
 		private WaterVolumeSubtract[] exclusions;
+		private float size;
 
 		public Water CurrentWater
 		{
@@ -66,11 +67,28 @@ namespace PlayWay.Water
 
 			if(currentWater != null && currentWater.Volume.Boundless)
 			{
-				if(!currentWater.Volume.IsPointInsideMainVolume(transform.position) && !currentWater.Volume.IsPointInside(transform.position, exclusions))
+				if(!currentWater.Volume.IsPointInsideMainVolume(transform.position) && !currentWater.Volume.IsPointInside(transform.position, exclusions, size))
 					LeaveCurrentWater();
             }
 			else if(currentWater == null)
 				ScanBoundlessWaters();
+		}
+
+		void OnDestroy()
+		{
+			currentWater = null;
+
+			if(enter != null)
+			{
+				enter.RemoveAllListeners();
+				enter = null;
+			}
+
+			if(leave != null)
+			{
+				leave.RemoveAllListeners();
+				leave = null;
+			}
 		}
 
 		public void OnTriggerEnter(Collider other)
@@ -81,7 +99,7 @@ namespace PlayWay.Water
 
 				if(volumeSubtract != null)
 				{
-					if(!currentWater.Volume.IsPointInside(transform.position, exclusions))
+					//if(!currentWater.Volume.IsPointInside(transform.position, exclusions, size))
 						LeaveCurrentWater();
 				}
 			}
@@ -89,7 +107,7 @@ namespace PlayWay.Water
 			{
 				var volumeAdd = other.GetComponent<WaterVolumeAdd>();
 
-				if(volumeAdd != null && volumeAdd.Water.Volume.IsPointInside(transform.position, exclusions))
+				if(volumeAdd != null/* && volumeAdd.Water.Volume.IsPointInside(transform.position, exclusions, size)*/)
 					EnterWater(volumeAdd.Water);
 			}
         }
@@ -107,7 +125,7 @@ namespace PlayWay.Water
 			{
 				var volumeAdd = other.GetComponent<WaterVolumeAdd>();
 
-				if(volumeAdd != null && volumeAdd.Water == currentWater && !currentWater.Volume.IsPointInside(transform.position, exclusions))
+				if(volumeAdd != null && volumeAdd.Water == currentWater/* && !currentWater.Volume.IsPointInside(transform.position, exclusions, size)*/)
 					LeaveCurrentWater();
 			}
 		}
@@ -119,7 +137,7 @@ namespace PlayWay.Water
 
 			foreach(var water in WaterGlobals.Instance.Waters)
 			{
-				if(water.Volume.IsPointInside(position, exclusions))
+				if(water.Volume.IsPointInside(position, exclusions, size))
 				{
 					EnterWater(water);
 					return;
@@ -133,9 +151,14 @@ namespace PlayWay.Water
 		{
 			Vector3 position = transform.position;
 
-			foreach(var water in WaterGlobals.Instance.BoundlessWaters)
+			var boundlessWaters = WaterGlobals.Instance.BoundlessWaters;
+			int numInstances = boundlessWaters.Count;
+
+			for(int i=0; i<numInstances; ++i)
 			{
-				if(water.Volume.IsPointInsideMainVolume(position) && water.Volume.IsPointInside(position, exclusions))
+				var water = boundlessWaters[i];
+
+				if(water.Volume.IsPointInsideMainVolume(position) && water.Volume.IsPointInside(position, exclusions, size))
 				{
 					EnterWater(water);
 					return;
@@ -167,14 +190,15 @@ namespace PlayWay.Water
 			}
 		}
 
-		static public WaterVolumeProbe CreateProbe(Transform target)
+		static public WaterVolumeProbe CreateProbe(Transform target, float size = 0.0f)
 		{
 			var go = new GameObject("Water Volume Probe");
 			go.hideFlags = HideFlags.HideAndDontSave;
 			go.transform.position = target.position;
+			go.layer = 1;								// TransparentFX layer
 
 			var sphereCollider = go.AddComponent<SphereCollider>();
-			sphereCollider.radius = 0.0f;               // make it a point
+			sphereCollider.radius = size;
 			sphereCollider.isTrigger = true;
 
 			var rigidBody = go.AddComponent<Rigidbody>();
@@ -184,6 +208,7 @@ namespace PlayWay.Water
 			var probe = go.AddComponent<WaterVolumeProbe>();
 			probe.target = target;
 			probe.targetted = true;
+			probe.size = size;
 			probe.exclusions = target.GetComponentsInChildren<WaterVolumeSubtract>(true);
 
 			return probe;
