@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9954acc3fea28ca49a5863928bc7ff21, type: 3}
+  m_Name: Tropical Islands
+  m_EditorClassIdentifier: 
+  shaders:
+  - {fileID: 4800000, guid: e19792ae5dadfab4b9b3f8c9baeef362, type: 3}
+  - {fileID: 4800000, guid: c7cf4d1452e085148b2a7a9aa2c85316, type: 3}
+  - {fileID: 4800000, guid: dae1702ae31a9d24fa4a62acff27b3ed, type: 3}
+  - {fileID: 4800000, guid: af57974f219fc9e4286c2437ec6673aa, type: 3}
+  - {fileID: 4800000, guid: 2353ce245079a124c96a3aa2e1501862, type: 3}

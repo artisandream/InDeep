@@ -1,1 +1,4 @@
-sceneSetups: []
+sceneSetups:
+- path: Assets/PlayWay Water/Samples/Physics Stress Test.unity
+  isLoaded: 1
+  isActive: 1

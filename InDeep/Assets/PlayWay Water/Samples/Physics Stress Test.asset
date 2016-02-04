@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_PrefabParentObject: {fileID: 0}
+  m_PrefabInternal: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9954acc3fea28ca49a5863928bc7ff21, type: 3}
+  m_Name: Physics Stress Test
+  m_EditorClassIdentifier: 
+  shaders:
+  - {fileID: 4800000, guid: 6ddddd873c8466a46ab91fcfec0745a9, type: 3}
+  - {fileID: 4800000, guid: 90102a682fd92a24e9f5ef5a7a6603cd, type: 3}
+  - {fileID: 4800000, guid: 57470e268cbae3d43b90208ed4a11e0c, type: 3}
+  - {fileID: 4800000, guid: 270fbc7da755d8440adeced8b268d320, type: 3}
+  - {fileID: 4800000, guid: e601677f187b1fb4188422b2d70ce146, type: 3}
